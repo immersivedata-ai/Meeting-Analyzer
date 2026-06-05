@@ -7,7 +7,6 @@ import os
 import tempfile
 import asyncio
 import logging
-from typing import Optional
 
 from pydub import AudioSegment
 

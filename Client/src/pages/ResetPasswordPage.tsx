@@ -1,37 +1,36 @@
 import { FormEvent, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
-import { Eye, EyeOff, Loader2, LogIn } from 'lucide-react';
+import { Eye, EyeOff, Loader2, KeyRound, ArrowLeft } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { useToast } from '@/hooks/use-toast';
-import { useAuth } from '@/contexts/AuthContext';
+import { resetPassword } from '@/lib/api/auth';
 
-const LoginPage = () => {
-  const [email, setEmail] = useState('');
-  const [password, setPassword] = useState('');
+const ResetPasswordPage = () => {
+  const [token, setToken] = useState('');
+  const [newPassword, setNewPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const { toast } = useToast();
   const navigate = useNavigate();
-  const { login } = useAuth();
 
   const handleSubmit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     setIsSubmitting(true);
 
     try {
-      await login(email.trim().toLowerCase(), password);
+      await resetPassword(token, newPassword);
       toast({
-        title: 'Signed in',
-        description: 'Welcome back to Manthan AI.',
+        title: 'Password reset',
+        description: 'Your password has been changed. You can now login.',
       });
-      navigate('/');
+      navigate('/login');
     } catch (error) {
       toast({
-        title: 'Login failed',
-        description: error instanceof Error ? error.message : 'Something went wrong.',
+        title: 'Reset failed',
+        description: error instanceof Error ? error.message : 'Invalid or expired token.',
         variant: 'destructive',
       });
     } finally {
@@ -44,48 +43,48 @@ const LoginPage = () => {
       <div className="mx-auto grid max-w-5xl items-center gap-10 lg:grid-cols-[1fr_440px]">
         <section className="space-y-6">
           <div className="inline-flex h-12 w-12 items-center justify-center rounded-lg bg-primary/15 text-primary">
-            <LogIn className="h-6 w-6" />
+            <KeyRound className="h-6 w-6" />
           </div>
           <div>
             <h1 className="text-4xl font-bold leading-tight md:text-5xl">
-              Login with email
+              Reset password
             </h1>
             <p className="mt-4 max-w-2xl text-lg text-muted-foreground">
-              Use your email and password to access Manthan AI.
+              Enter the reset code from your email and choose a new password.
             </p>
           </div>
         </section>
 
         <Card className="border-glass-border/40 bg-card/80 shadow-xl backdrop-blur">
           <CardHeader>
-            <CardTitle>Login</CardTitle>
-            <CardDescription>Enter your account details.</CardDescription>
+            <CardTitle>Set new password</CardTitle>
+            <CardDescription>Enter the reset code from your email and new password.</CardDescription>
           </CardHeader>
           <CardContent>
             <form className="space-y-5" onSubmit={handleSubmit}>
               <div className="space-y-2">
-                <Label htmlFor="email">Email</Label>
+                <Label htmlFor="token">Reset code</Label>
                 <Input
-                  id="email"
-                  type="email"
-                  autoComplete="email"
-                  placeholder="ishan@example.com"
-                  value={email}
-                  onChange={(event) => setEmail(event.target.value)}
+                  id="token"
+                  type="text"
+                  placeholder="Paste the reset code from your email"
+                  value={token}
+                  onChange={(event) => setToken(event.target.value)}
                   required
                 />
               </div>
 
               <div className="space-y-2">
-                <Label htmlFor="password">Password</Label>
+                <Label htmlFor="new-password">New password</Label>
                 <div className="relative">
                   <Input
-                    id="password"
+                    id="new-password"
                     type={showPassword ? 'text' : 'password'}
-                    autoComplete="current-password"
-                    placeholder="Enter your password"
-                    value={password}
-                    onChange={(event) => setPassword(event.target.value)}
+                    autoComplete="new-password"
+                    placeholder="Enter new password (min 8 characters)"
+                    value={newPassword}
+                    onChange={(event) => setNewPassword(event.target.value)}
+                    minLength={8}
                     className="pr-11"
                     required
                   />
@@ -103,21 +102,15 @@ const LoginPage = () => {
               </div>
 
               <Button type="submit" variant="gradient" size="lg" className="w-full" disabled={isSubmitting}>
-                {isSubmitting ? <Loader2 className="h-4 w-4 animate-spin" /> : <LogIn className="h-4 w-4" />}
-                Login
+                {isSubmitting ? <Loader2 className="h-4 w-4 animate-spin" /> : <KeyRound className="h-4 w-4" />}
+                Reset password
               </Button>
             </form>
 
-            <p className="mt-4 text-center text-sm">
-              <Link to="/forgot-password" className="text-muted-foreground hover:text-primary underline underline-offset-4">
-                Forgot password?
-              </Link>
-            </p>
-
-            <p className="mt-4 text-center text-sm text-muted-foreground">
-              New here?{' '}
-              <Link to="/signup" className="font-medium text-primary hover:underline">
-                Create an account
+            <p className="mt-6 text-center text-sm text-muted-foreground">
+              <Link to="/login" className="inline-flex items-center gap-1 font-medium text-primary hover:underline">
+                <ArrowLeft className="h-3 w-3" />
+                Back to login
               </Link>
             </p>
           </CardContent>
@@ -127,4 +120,4 @@ const LoginPage = () => {
   );
 };
 
-export default LoginPage;
+export default ResetPasswordPage;

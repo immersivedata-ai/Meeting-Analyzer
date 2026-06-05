@@ -9,6 +9,7 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
 import { checkHealth } from '@/lib/api/health';
+import { UserProfile } from '@/components/auth/UserProfile';
 
 interface HeaderProps {
   processingTime?: number;
@@ -86,6 +87,8 @@ export const Header = ({ processingTime, isProcessing }: HeaderProps) => {
         </div>
 
         <div className="flex items-center space-x-6">
+          <UserProfile />
+
           {processingTime && (
             <div className="flex items-center space-x-2 text-sm text-muted-foreground">
               <Clock className="w-4 h-4" />

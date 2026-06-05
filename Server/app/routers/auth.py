@@ -2,6 +2,8 @@ import hashlib
 import hmac
 import os
 import secrets
+import asyncio
+import logging
 from datetime import datetime, timedelta, timezone
 from typing import Optional
 
@@ -9,7 +11,10 @@ from bson import ObjectId
 from fastapi import APIRouter, Cookie, HTTPException, Response
 from pydantic import BaseModel, Field
 
-from app.database import sessions_collection, users_collection
+from app.database import sessions_collection, users_collection, password_resets_collection
+from app.utils.email import send_reset_email
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter()
 
@@ -26,6 +31,15 @@ class RegisterRequest(BaseModel):
 class LoginRequest(BaseModel):
     email: str = Field(..., min_length=3, max_length=254)
     password: str = Field(..., min_length=1, max_length=128)
+
+
+class ForgotPasswordRequest(BaseModel):
+    email: str = Field(..., min_length=3, max_length=254)
+
+
+class ResetPasswordRequest(BaseModel):
+    token: str = Field(..., min_length=1, max_length=128)
+    new_password: str = Field(..., min_length=8, max_length=128)
 
 
 def normalize_email(email: str) -> str:
@@ -161,3 +175,81 @@ async def me(manthan_session: Optional[str] = Cookie(default=None, alias=SESSION
         raise HTTPException(status_code=401, detail="Not authenticated")
 
     return {"user": public_user(user)}
+
+
+RESET_TOKEN_EXPIRY_MINUTES = 60
+
+
+def hash_reset_token(token: str) -> str:
+    session_secret = os.getenv("SESSION_SECRET")
+    if not session_secret:
+        raise RuntimeError("SESSION_SECRET is not configured")
+    return hmac.new(
+        session_secret.encode("utf-8"),
+        token.encode("utf-8"),
+        hashlib.sha256,
+    ).hexdigest()
+
+
+@router.post("/forgot-password")
+async def forgot_password(payload: ForgotPasswordRequest):
+    email = normalize_email(payload.email)
+    user = await users_collection.find_one({"email": email})
+
+    if not user:
+        return {"message": "If the email is registered, a reset code has been sent"}
+
+    reset_token = secrets.token_urlsafe(32)
+    expires_at = datetime.now(timezone.utc) + timedelta(minutes=RESET_TOKEN_EXPIRY_MINUTES)
+
+    await password_resets_collection.delete_many({"email": email})
+
+    await password_resets_collection.insert_one({
+        "email": email,
+        "token_hash": hash_reset_token(reset_token),
+        "created_at": datetime.now(timezone.utc),
+        "expires_at": expires_at,
+    })
+
+    email_sent = await asyncio.to_thread(send_reset_email, email, reset_token, RESET_TOKEN_EXPIRY_MINUTES)
+
+    if not email_sent:
+        is_debug = os.getenv("DEBUG", "false").lower() == "true"
+        logger.warning(f"Failed to send reset email to {email}")
+        if is_debug:
+            return {
+                "message": "Reset token generated (email failed)",
+                "token": reset_token,
+                "expires_in_minutes": RESET_TOKEN_EXPIRY_MINUTES,
+            }
+        return {"message": "Email delivery failed, please try again later"}
+
+    return {"message": "If the email is registered, a reset code has been sent"}
+
+
+@router.post("/reset-password")
+async def reset_password(payload: ResetPasswordRequest):
+    token_hash = hash_reset_token(payload.token)
+
+    doc = await password_resets_collection.find_one({
+        "token_hash": token_hash,
+        "expires_at": {"$gt": datetime.now(timezone.utc)},
+    })
+
+    if not doc:
+        raise HTTPException(status_code=400, detail="Invalid or expired reset token")
+
+    email = doc["email"]
+    await password_resets_collection.delete_one({"_id": doc["_id"]})
+
+    await users_collection.update_one(
+        {"email": email},
+        {
+            "$set": {
+                "password_hash": password_hash(payload.new_password),
+                "updated_at": datetime.now(timezone.utc),
+            }
+        },
+    )
+
+    return {"message": "Password has been reset successfully"}

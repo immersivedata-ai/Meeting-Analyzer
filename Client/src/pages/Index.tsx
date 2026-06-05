@@ -7,7 +7,6 @@ import { Button } from '@/components/ui/button';
 import { useToast } from '@/hooks/use-toast';
 import { LogIn, Mail, Github, Chrome, Brain, Zap, Shield, Clock } from 'lucide-react';
 import heroBackground from '@/assets/hero-background.jpg';
-import { sampleAnalysisResults } from '@/utils/demoData';
 import type { AnalysisResults } from '@/types/analysis';
 
 const Index = () => {
@@ -74,7 +73,7 @@ const Index = () => {
     setIsAuthenticated(true);
     toast({
       title: "Welcome back!",
-      description: "You're now signed in to MeetingMind AI",
+      description: "You're now signed in to Manthan AI",
     });
   };
 
@@ -103,14 +102,14 @@ const Index = () => {
             <div className="text-center mb-16 animate-fade-in">
               <div className="mb-8">
                 <h1 className="text-6xl font-bold mb-6 bg-gradient-to-r from-white via-primary-glow to-primary bg-clip-text text-transparent">
-                  MeetingMind AI
+                  Manthan AI
                 </h1>
                 <p className="text-2xl text-muted-foreground mb-4 max-w-3xl mx-auto">
                   Transform your meetings into actionable insights with AI-powered transcription, 
                   summaries, and intelligent analysis
                 </p>
                 <p className="text-lg text-muted-foreground/80">
-                  Join thousands of professionals who trust MeetingMind AI for smarter meetings
+                  Join thousands of professionals who trust Manthan AI for smarter meetings
                 </p>
               </div>
             </div>

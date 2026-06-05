@@ -52,7 +52,7 @@ const SignupPage = () => {
               Create your Manthan AI account
             </h1>
             <p className="mt-4 max-w-2xl text-lg text-muted-foreground">
-              Sign up with your name, email, and password. Your backend can store this user in MongoDB and return a JWT when the auth API is connected.
+              Sign up with your name, email, and password to create your Manthan AI account.
             </p>
           </div>
         </section>

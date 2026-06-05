@@ -1,5 +1,5 @@
 export { apiFetch } from './api/client'
-export { fetchMe, loginUser, registerUser, logoutUser } from './api/auth'
+export { fetchMe, loginUser, registerUser, logoutUser, forgotPassword, resetPassword } from './api/auth'
 export { analyzeFile, getSupportedFormats, getServiceStatus } from './api/analysis'
 export { checkHealth } from './api/health'
 export type { User } from './api/auth'

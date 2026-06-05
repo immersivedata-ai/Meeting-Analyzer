@@ -135,10 +135,10 @@ def cleanup_temp_files(directory: Optional[str] = None) -> None:
         if directory and os.path.exists(directory):
             if os.path.isfile(directory):
                 os.remove(directory)
-                print(f"🗑️ Cleaned up temp file: {directory}")
+                logger.info(f"Cleaned up temp file: {directory}")
             elif os.path.isdir(directory):
                 shutil.rmtree(directory)
-                print(f"🗑️ Cleaned up temp directory: {directory}")
+                logger.info(f"Cleaned up temp directory: {directory}")
         else:
             # Clean up old temp directories
             temp_base = tempfile.gettempdir()
@@ -151,7 +151,7 @@ def cleanup_temp_files(directory: Optional[str] = None) -> None:
                                 # Only remove if older than 1 hour
                                 if os.path.getmtime(item_path) < (time.time() - 3600):
                                     shutil.rmtree(item_path)
-                                    print(f"🗑️ Cleaned up old temp directory: {item}")
+                                    logger.info(f"Cleaned up old temp directory: {item}")
                             except Exception:
                                 pass  # Ignore cleanup errors for individual directories
             except Exception:

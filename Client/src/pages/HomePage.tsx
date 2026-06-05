@@ -63,7 +63,7 @@ const HomePage = () => {
                   summaries, and intelligent analysis
                 </p>
                 <p className="text-lg text-muted-foreground/80">
-                  Join thousands of professionals who trust MeetingMind AI for smarter meetings
+                  Join thousands of professionals who trust Manthan AI for smarter meetings
                 </p>
               </div>
             </div>
