@@ -7,6 +7,7 @@ import tempfile
 import traceback
 import uuid
 import time
+import logging
 from typing import Dict, Any
 
 from fastapi import APIRouter, File, UploadFile, HTTPException, BackgroundTasks, Depends
@@ -19,6 +20,8 @@ from app.utils.file_handler import validate_audio_file, cleanup_temp_files
 from app.utils.config import get_settings, Settings
 
 router = APIRouter()
+
+logger = logging.getLogger(__name__)
 
 # Initialize services
 audio_processor = ProductionAudioProcessor()
@@ -88,7 +91,7 @@ async def analyze_meeting(
         temp_filepath = os.path.join(temp_dir, safe_filename)
         
         # Save uploaded file
-        print(f"📁 Saving uploaded file: {file.filename} ({file.size if hasattr(file, 'size') else 'unknown size'} bytes)")
+        logger.info(f"Saving uploaded file: {file.filename} ({file.size if hasattr(file, 'size') else 'unknown size'} bytes)")
         
         with open(temp_filepath, "wb") as temp_file:
             content = await file.read()
@@ -103,7 +106,7 @@ async def analyze_meeting(
         
         # Get audio info for logging
         audio_info = audio_processor.get_audio_info(temp_filepath)
-        print(f"🎵 Audio info: {audio_info.get('duration', 0):.1f}s, {audio_info.get('sample_rate', 0)}Hz")
+        logger.info(f"Audio info: {audio_info.get('duration', 0):.1f}s, {audio_info.get('sample_rate', 0)}Hz")
         
         # Check duration limits
         if audio_info.get('duration', 0) > settings.MAX_AUDIO_DURATION:
@@ -113,13 +116,13 @@ async def analyze_meeting(
             )
         
         # Process audio file
-        print(f"🔧 Processing audio file: {file.filename}")
+        logger.info(f"Processing audio file: {file.filename}")
         processed_audio_path = await audio_processor.process_audio(
             temp_filepath, session_id
         )
         
         # Analyze using API services
-        print("🧠 Performing analysis with OpenAI API...")
+        logger.info("Performing analysis with OpenAI API...")
         async with ProductionNLPAnalyzer() as nlp_analyzer:
             analysis_result = await nlp_analyzer.analyze_meeting(processed_audio_path)
         
@@ -137,7 +140,7 @@ async def analyze_meeting(
         # Schedule cleanup
         background_tasks.add_task(cleanup_temp_files, temp_dir)
         
-        print(f"✅ Analysis completed for session: {session_id} in {processing_time:.2f}s")
+        logger.info(f"Analysis completed for session: {session_id} in {processing_time:.2f}s")
         return response
         
     except HTTPException:
@@ -147,8 +150,8 @@ async def analyze_meeting(
         raise
         
     except Exception as e:
-        print(f"❌ Error processing file: {str(e)}")
-        print(traceback.format_exc())
+        logger.error(f"Error processing file: {str(e)}")
+        logger.error(traceback.format_exc())
         
         # Cleanup on error
         if temp_dir:

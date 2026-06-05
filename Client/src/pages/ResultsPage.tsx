@@ -5,44 +5,17 @@ import { ResultsSection } from '@/components/ResultsSection';
 import { FloatingActionButton } from '@/components/FloatingActionButton';
 import { Button } from '@/components/ui/button';
 import { useToast } from '@/hooks/use-toast';
-
-interface AnalysisResults {
-  transcript: Array<{
-    id: string;
-    speaker: string;
-    text: string;
-    start_time: number;
-    end_time: number;
-    confidence: number;
-  }>;
-  summary: string;
-  action_items: Array<{
-    id: string;
-    text: string;
-    assignee?: string;
-    deadline?: string;
-    priority: string;
-    confidence: number;
-  }>;
-  key_decisions: Array<{
-    id: string;
-    decision: string;
-    rationale?: string;
-    impact: string;
-    confidence: number;
-  }>;
-  processing_time: number;
-}
+import { useAuth } from '@/contexts/AuthContext';
+import type { AnalysisResults } from '@/types/analysis';
 
 const ResultsPage = () => {
   const location = useLocation();
   const navigate = useNavigate();
   const { toast } = useToast();
+  const { logout } = useAuth();
   
-  // Get results from navigation state
   const results: AnalysisResults | null = location.state?.results || null;
 
-  // Redirect to home if no results
   useEffect(() => {
     if (!results) {
       navigate('/');
@@ -83,7 +56,7 @@ const ResultsPage = () => {
   const handleShare = () => {
     if (!results) return;
     
-    const shareText = `Meeting Analysis Summary:\n\n${results.summary}\n\nAction Items:\n${results.action_items.map(item => `• ${item}`).join('\n')}`;
+    const shareText = `Meeting Analysis Summary:\n\n${results.summary}\n\nAction Items:\n${results.action_items.map(item => `• ${item.text}`).join('\n')}`;
     
     if (navigator.share) {
       navigator.share({
@@ -99,7 +72,8 @@ const ResultsPage = () => {
     }
   };
 
-  const handleSignOut = () => {
+  const handleSignOut = async () => {
+    await logout();
     navigate('/');
     toast({
       title: "Signed out",
@@ -107,7 +81,6 @@ const ResultsPage = () => {
     });
   };
 
-  // Don't render if no results (will redirect)
   if (!results) {
     return null;
   }
@@ -150,7 +123,6 @@ const ResultsPage = () => {
         </div>
       </main>
 
-      {/* Floating Action Button */}
       <FloatingActionButton
         onNewUpload={handleNewUpload}
         onExport={handleExport}
@@ -158,7 +130,6 @@ const ResultsPage = () => {
         hasResults={true}
       />
 
-      {/* Background decorative elements */}
       <div className="fixed inset-0 -z-10 overflow-hidden">
         <div className="absolute -top-40 -right-40 w-80 h-80 rounded-full bg-primary/10 blur-3xl animate-float" />
         <div className="absolute -bottom-40 -left-40 w-80 h-80 rounded-full bg-primary-glow/10 blur-3xl animate-float" style={{ animationDelay: '2s' }} />

@@ -4,14 +4,9 @@ import { Upload, File, AlertTriangle, CheckCircle, Loader2, Zap } from 'lucide-r
 import { Button } from '@/components/ui/button';
 import { Progress } from '@/components/ui/progress';
 import { Alert, AlertDescription } from '@/components/ui/alert';
-import { sampleAnalysisResults, generateRandomResults } from '@/utils/demoData';
-import { apiClient } from '@/lib/api';
-
-interface FileUploadProps {
-  onFileAnalyzed: (results: any) => void;
-  isProcessing: boolean;
-  setIsProcessing: (processing: boolean) => void;
-}
+import { sampleAnalysisResults } from '@/utils/demoData';
+import { analyzeFile } from '@/lib/api/analysis';
+import type { FileUploadProps } from '@/types/analysis';
 
 const ACCEPTED_FORMATS = {
   'audio/mpeg': ['.mp3'],
@@ -20,7 +15,7 @@ const ACCEPTED_FORMATS = {
   'video/mp4': ['.mp4'],
 };
 
-const MAX_FILE_SIZE = 25 * 1024 * 1024; // 25MB
+const MAX_FILE_SIZE = 25 * 1024 * 1024;
 
 export const FileUpload = ({ onFileAnalyzed, isProcessing, setIsProcessing }: FileUploadProps) => {
   const [uploadProgress, setUploadProgress] = useState(0);
@@ -33,18 +28,11 @@ export const FileUpload = ({ onFileAnalyzed, isProcessing, setIsProcessing }: Fi
     setIsProcessing(true);
     setUploadProgress(0);
     
-    // Demo mode if no files provided
     const isDemoMode = acceptedFiles.length === 0;
 
     try {
-      let formData;
       const file = acceptedFiles[0];
-      if (!isDemoMode) {
-        formData = new FormData();
-        formData.append('file', file);
-      }
 
-      // Simulate upload progress
       setProcessingStep('Uploading...');
       for (let i = 0; i <= 30; i += 5) {
         setUploadProgress(i);
@@ -62,23 +50,15 @@ export const FileUpload = ({ onFileAnalyzed, isProcessing, setIsProcessing }: Fi
       let results;
       
       if (isDemoMode) {
-        // Use demo data directly
-        console.log('Using demo data');
         results = sampleAnalysisResults;
         await new Promise(resolve => setTimeout(resolve, 1500));
       } else {
-        console.log('Uploading file:', file.name, 'Size:', file.size);
-  
         try {
-          results = await apiClient.analyzeFile(file);
-          console.log('✅ API Success:', results);
+          results = await analyzeFile(file);
         } catch (apiError) {
-          console.error('❌ API Error:', apiError);
-
-          // Don't silently use demo data - show the actual error
-          throw new Error(`Server error: ${apiError.message || 'Failed to process file'}. Check server logs.`);
+          throw new Error(`Server error: ${(apiError as Error).message || 'Failed to process file'}. Check server logs.`);
         }
-        }
+      }
 
       for (let i = 60; i <= 100; i += 10) {
         setUploadProgress(i);

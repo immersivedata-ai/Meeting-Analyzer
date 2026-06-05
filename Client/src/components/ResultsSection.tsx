@@ -17,34 +17,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Badge } from '@/components/ui/badge';
 import { Textarea } from '@/components/ui/textarea';
 import { useToast } from '@/hooks/use-toast';
-
-interface AnalysisResults {
-  transcript: Array<{
-    id: string;
-    speaker: string;
-    text: string;
-    start_time: number;
-    end_time: number;
-    confidence: number;
-  }>;
-  summary: string;
-  action_items: Array<{
-    id: string;
-    text: string;
-    assignee?: string;
-    deadline?: string;
-    priority: string;
-    confidence: number;
-  }>;
-  key_decisions: Array<{
-    id: string;
-    decision: string;
-    rationale?: string;
-    impact: string;
-    confidence: number;
-  }>;
-  processing_time: number;
-}
+import type { AnalysisResults } from '@/types/analysis';
 
 interface ResultsSectionProps {
   results: AnalysisResults;

@@ -1,0 +1,81 @@
+{
+  "version": "2.0.0",
+  "tasks": [
+    {
+      "label": "Backend - Start",
+      "type": "shell",
+      "command": "python",
+      "args": ["run.py"],
+      "options": {
+        "cwd": "${workspaceFolder}/Server"
+      },
+      "problemMatcher": [],
+      "group": "none",
+      "isBackground": false,
+      "presentation": {
+        "reveal": "always",
+        "panel": "dedicated",
+        "group": "server"
+      }
+    },
+    {
+      "label": "Frontend - Start",
+      "type": "shell",
+      "command": "cmd",
+      "args": ["/c", "npm run dev"],
+      "options": {
+        "cwd": "${workspaceFolder}/Client"
+      },
+      "problemMatcher": [],
+      "group": "none",
+      "isBackground": false,
+      "presentation": {
+        "reveal": "always",
+        "panel": "dedicated",
+        "group": "client"
+      }
+    },
+    {
+      "label": "Start All (Backend + Frontend)",
+      "dependsOn": ["Backend - Start", "Frontend - Start"],
+      "problemMatcher": [],
+      "group": {
+        "kind": "build",
+        "isDefault": true
+      }
+    },
+    {
+      "label": "Backend - Install Dependencies",
+      "type": "shell",
+      "command": "pip",
+      "args": ["install", "-r", "requirements.txt"],
+      "options": {
+        "cwd": "${workspaceFolder}/Server"
+      },
+      "problemMatcher": [],
+      "group": "none"
+    },
+    {
+      "label": "Frontend - Install Dependencies",
+      "type": "shell",
+      "command": "cmd",
+      "args": ["/c", "npm install"],
+      "options": {
+        "cwd": "${workspaceFolder}/Client"
+      },
+      "problemMatcher": [],
+      "group": "none"
+    },
+    {
+      "label": "Frontend - Build",
+      "type": "shell",
+      "command": "cmd",
+      "args": ["/c", "npm run build"],
+      "options": {
+        "cwd": "${workspaceFolder}/Client"
+      },
+      "problemMatcher": [],
+      "group": "none"
+    }
+  ]
+}

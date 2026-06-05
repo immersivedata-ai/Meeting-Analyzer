@@ -6,10 +6,13 @@ import os
 import shutil
 import tempfile
 import mimetypes
+import logging
 from typing import Optional, List
 from pathlib import Path
 
 from fastapi import UploadFile
+
+logger = logging.getLogger(__name__)
 
 
 # Supported audio/video formats
@@ -155,7 +158,7 @@ def cleanup_temp_files(directory: Optional[str] = None) -> None:
                 pass  # Ignore if can't list temp directory
                 
     except Exception as e:
-        print(f"⚠️ Cleanup warning: {e}")
+        logger.warning(f"Cleanup warning: {e}")
         # Don't raise exceptions for cleanup failures
 
 

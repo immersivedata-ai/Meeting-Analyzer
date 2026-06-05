@@ -8,6 +8,7 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
+import { checkHealth } from '@/lib/api/health';
 
 interface HeaderProps {
   processingTime?: number;
@@ -19,17 +20,17 @@ export const Header = ({ processingTime, isProcessing }: HeaderProps) => {
   const navigate = useNavigate();
 
   useEffect(() => {
-    const checkApiHealth = async () => {
+    const check = async () => {
       try {
-        const response = await fetch('http://localhost:8000/health');
-        setApiStatus(response.ok ? 'online' : 'offline');
+        await checkHealth();
+        setApiStatus('online');
       } catch {
         setApiStatus('offline');
       }
     };
 
-    checkApiHealth();
-    const interval = setInterval(checkApiHealth, 30000); // Check every 30s
+    check();
+    const interval = setInterval(check, 30000);
     return () => clearInterval(interval);
   }, []);
 
@@ -48,7 +49,6 @@ export const Header = ({ processingTime, isProcessing }: HeaderProps) => {
   return (
     <header className="glass-strong border-b border-glass-border/30 sticky top-0 z-50">
       <div className="container mx-auto px-6 h-16 flex items-center justify-between">
-        {/* Logo and Brand - Clickable */}
         <div 
           className="flex items-center space-x-3 cursor-pointer hover:opacity-80 transition-opacity duration-200"
           onClick={handleLogoClick}
@@ -85,7 +85,6 @@ export const Header = ({ processingTime, isProcessing }: HeaderProps) => {
           </div>
         </div>
 
-        {/* Status Information */}
         <div className="flex items-center space-x-6">
           {processingTime && (
             <div className="flex items-center space-x-2 text-sm text-muted-foreground">
@@ -101,7 +100,6 @@ export const Header = ({ processingTime, isProcessing }: HeaderProps) => {
             </div>
           )}
 
-          {/* Settings Dropdown */}
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
               <Button variant="ghost" size="sm" className="w-9 h-9 p-0 hover:bg-white/10">

@@ -1,30 +1,6 @@
-export interface AnalysisResults {
-  transcript: Array<{
-    id: string;
-    speaker: string;
-    text: string;
-    start_time: number;
-    end_time: number;
-    confidence: number;
-  }>;
-  summary: string;
-  action_items: Array<{
-    id: string;
-    text: string;
-    assignee?: string;
-    deadline?: string;
-    priority: string;
-    confidence: number;
-  }>;
-  key_decisions: Array<{
-    id: string;
-    decision: string;
-    rationale?: string;
-    impact: string;
-    confidence: number;
-  }>;
-  processing_time: number;
-}
+import type { AnalysisResults } from '@/types/analysis'
+
+export type { AnalysisResults }
 
 export const sampleAnalysisResults: AnalysisResults = {
   transcript: [
@@ -100,80 +76,60 @@ export const sampleAnalysisResults: AnalysisResults = {
 };
 
 export const generateRandomResults = (): AnalysisResults => {
-  const variations = {
+  return {
     transcript: [
-      [
-        {
-          id: "1",
-          speaker: "Alex Rodriguez",
-          text: "Let's begin our quarterly business review. We need to analyze our performance metrics and plan for next quarter.",
-          start_time: 0,
-          end_time: 7,
-          confidence: 0.93
-        },
-        {
-          id: "2",
-          speaker: "Emma Wilson",
-          text: "Our customer acquisition rate increased by 25% this quarter, which exceeds our initial projections.",
-          start_time: 7,
-          end_time: 14,
-          confidence: 0.96
-        }
-      ]
+      {
+        id: "1",
+        speaker: "Alex Rodriguez",
+        text: "Let's begin our quarterly business review. We need to analyze our performance metrics and plan for next quarter.",
+        start_time: 0,
+        end_time: 7,
+        confidence: 0.93
+      },
+      {
+        id: "2",
+        speaker: "Emma Wilson",
+        text: "Our customer acquisition rate increased by 25% this quarter, which exceeds our initial projections.",
+        start_time: 7,
+        end_time: 14,
+        confidence: 0.96
+      }
     ],
-    summary: [
-      "Quarterly business review meeting covering performance metrics and strategic planning. Customer acquisition exceeded projections with 25% growth. Team discussed resource allocation and identified key opportunities for next quarter growth.",
-      "Weekly project standup focusing on sprint goals and blockers. Development team made significant progress on core features while addressing technical debt. QA identified critical bugs requiring immediate attention.",
-      "Client presentation went successfully with positive feedback on deliverables. Account team secured additional scope and budget approval for phase two implementation.",
-      "Security review highlighted potential vulnerabilities requiring immediate patches. DevOps team outlined remediation plan with timeline for critical fixes."
-    ],
+    summary: "Quarterly business review meeting covering performance metrics and strategic planning. Customer acquisition exceeded projections with 25% growth. Team discussed resource allocation and identified key opportunities for next quarter growth.",
     action_items: [
-      [
-        {
-          id: "1",
-          text: "Prepare comprehensive quarterly report for stakeholders",
-          assignee: "Alex Rodriguez",
-          deadline: "2024-12-25",
-          priority: "high",
-          confidence: 0.91
-        },
-        {
-          id: "2",
-          text: "Schedule customer feedback sessions for product improvements",
-          assignee: "Emma Wilson",
-          deadline: "2024-12-30",
-          priority: "medium",
-          confidence: 0.85
-        }
-      ]
+      {
+        id: "1",
+        text: "Prepare comprehensive quarterly report for stakeholders",
+        assignee: "Alex Rodriguez",
+        deadline: "2024-12-25",
+        priority: "high",
+        confidence: 0.91
+      },
+      {
+        id: "2",
+        text: "Schedule customer feedback sessions for product improvements",
+        assignee: "Emma Wilson",
+        deadline: "2024-12-30",
+        priority: "medium",
+        confidence: 0.85
+      }
     ],
     key_decisions: [
-      [
-        {
-          id: "1",
-          decision: "Increase marketing budget by 15% for next quarter",
-          rationale: "Strong ROI demonstrated in current quarter justifies additional investment",
-          impact: "high",
-          confidence: 0.94
-        },
-        {
-          id: "2",
-          decision: "Implement new customer onboarding process",
-          rationale: "Current process has bottlenecks affecting user experience and conversion rates",
-          impact: "medium",
-          confidence: 0.89
-        }
-      ]
-    ]
-  };
-
-  const randomIndex = Math.floor(Math.random() * variations.transcript.length);
-  
-  return {
-    transcript: variations.transcript[randomIndex],
-    summary: variations.summary[randomIndex],
-    action_items: variations.action_items[randomIndex] || variations.action_items[0],
-    key_decisions: variations.key_decisions[randomIndex] || variations.key_decisions[0],
-    processing_time: Math.random() * 60 + 20 // 20-80 seconds
+      {
+        id: "1",
+        decision: "Increase marketing budget by 15% for next quarter",
+        rationale: "Strong ROI demonstrated in current quarter justifies additional investment",
+        impact: "high",
+        confidence: 0.94
+      },
+      {
+        id: "2",
+        decision: "Implement new customer onboarding process",
+        rationale: "Current process has bottlenecks affecting user experience and conversion rates",
+        impact: "medium",
+        confidence: 0.89
+      }
+    ],
+    processing_time: Math.random() * 60 + 20
   };
 };

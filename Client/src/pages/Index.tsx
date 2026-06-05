@@ -8,34 +8,7 @@ import { useToast } from '@/hooks/use-toast';
 import { LogIn, Mail, Github, Chrome, Brain, Zap, Shield, Clock } from 'lucide-react';
 import heroBackground from '@/assets/hero-background.jpg';
 import { sampleAnalysisResults } from '@/utils/demoData';
-
-interface AnalysisResults {
-  transcript: Array<{
-    id: string;
-    speaker: string;
-    text: string;
-    start_time: number;
-    end_time: number;
-    confidence: number;
-  }>;
-  summary: string;
-  action_items: Array<{
-    id: string;
-    text: string;
-    assignee?: string;
-    deadline?: string;
-    priority: string;
-    confidence: number;
-  }>;
-  key_decisions: Array<{
-    id: string;
-    decision: string;
-    rationale?: string;
-    impact: string;
-    confidence: number;
-  }>;
-  processing_time: number;
-}
+import type { AnalysisResults } from '@/types/analysis';
 
 const Index = () => {
   const [results, setResults] = useState<AnalysisResults | null>(null);

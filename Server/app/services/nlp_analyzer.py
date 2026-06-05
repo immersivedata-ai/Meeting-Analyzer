@@ -33,12 +33,12 @@ class ProductionNLPAnalyzer:
         
         # Validate API keys
         if not self.openai_api_key:
-            logger.error("❌ OpenAI API key not found!")
+            logger.error("[ERROR] OpenAI API key not found!")
         elif not self.openai_api_key.startswith("sk-"):
-            logger.error(f"❌ OpenAI API key format invalid! Starts with: {self.openai_api_key[:10]}")
+            logger.error(f"[ERROR] OpenAI API key format invalid! Starts with: {self.openai_api_key[:10]}")
         else:
-            logger.info(f"✅ API Key loaded: True - Length: {len(self.openai_api_key)}")
-            logger.info(f"🔑 API Key prefix: {self.openai_api_key[:15]}...")
+            logger.info(f"[OK] API Key loaded: True - Length: {len(self.openai_api_key)}")
+            logger.info(f"[KEY] API Key prefix: {self.openai_api_key[:15]}...")
         
         logger.info("Production NLP Analyzer initialized")
 
@@ -53,9 +53,9 @@ class ProductionNLPAnalyzer:
         }
         
         # Debug logging
-        logger.info(f"🔍 Making transcription request to OpenAI")
-        logger.info(f"🔍 API Key prefix: {api_key[:20]}...")
-        logger.info(f"🔍 API Key length: {len(api_key)}")
+        logger.info(f"[DEBUG] Making transcription request to OpenAI")
+        logger.info(f"[DEBUG] API Key prefix: {api_key[:20]}...")
+        logger.info(f"[DEBUG] API Key length: {len(api_key)}")
         
         files = {
             "file": audio_file,
@@ -71,21 +71,21 @@ class ProductionNLPAnalyzer:
                 files=files
             )
             
-            logger.info(f"🔍 Response status: {response.status_code}")
+            logger.info(f"[DEBUG] Response status: {response.status_code}")
             
             if response.status_code != 200:
-                logger.error(f"❌ OpenAI API Error: {response.status_code}")
-                logger.error(f"❌ Response body: {response.text}")
+                logger.error(f"[ERROR] OpenAI API Error: {response.status_code}")
+                logger.error(f"[ERROR] Response body: {response.text}")
                 response.raise_for_status()
             
             return response.json()
             
         except httpx.HTTPStatusError as e:
-            logger.error(f"❌ HTTP Error from OpenAI: {e.response.status_code}")
-            logger.error(f"❌ Error details: {e.response.text}")
+            logger.error(f"[ERROR] HTTP Error from OpenAI: {e.response.status_code}")
+            logger.error(f"[ERROR] Error details: {e.response.text}")
             raise
         except Exception as e:
-            logger.error(f"❌ Unexpected error calling OpenAI: {str(e)}")
+            logger.error(f"[ERROR] Unexpected error calling OpenAI: {str(e)}")
             raise
 
     async def analyze_meeting(self, audio_path: str) -> Dict[str, Any]:

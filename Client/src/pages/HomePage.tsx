@@ -8,34 +8,7 @@ import { Button } from '@/components/ui/button';
 import { useToast } from '@/hooks/use-toast';
 import { LogIn, UserPlus, Brain, Zap, Shield, Clock } from 'lucide-react';
 import heroBackground from '@/assets/hero-background.jpg';
-
-interface AnalysisResults {
-  transcript: Array<{
-    id: string;
-    speaker: string;
-    text: string;
-    start_time: number;
-    end_time: number;
-    confidence: number;
-  }>;
-  summary: string;
-  action_items: Array<{
-    id: string;
-    text: string;
-    assignee?: string;
-    deadline?: string;
-    priority: string;
-    confidence: number;
-  }>;
-  key_decisions: Array<{
-    id: string;
-    decision: string;
-    rationale?: string;
-    impact: string;
-    confidence: number;
-  }>;
-  processing_time: number;
-}
+import type { AnalysisResults } from '@/types/analysis';
 
 const HomePage = () => {
   const [isProcessing, setIsProcessing] = useState(false);
@@ -44,7 +17,6 @@ const HomePage = () => {
   const navigate = useNavigate();
 
   const handleFileAnalyzed = (analysisResults: AnalysisResults) => {
-    // Navigate to results page with the analysis data
     navigate('/results', { state: { results: analysisResults } });
   };
 
