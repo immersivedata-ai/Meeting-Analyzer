@@ -12,6 +12,8 @@ from pathlib import Path
 
 from fastapi import UploadFile
 
+from app.utils.config import get_settings
+
 logger = logging.getLogger(__name__)
 
 
@@ -29,14 +31,12 @@ SUPPORTED_AUDIO_TYPES = {
     "audio/flac",      # FLAC
     "audio/webm",      # WebM audio
     "video/webm",      # WebM video
+    "application/octet-stream",  # Generic binary (common for large files)
 }
 
 SUPPORTED_EXTENSIONS = {
     ".mp3", ".wav", ".m4a", ".mp4", ".ogg", ".flac", ".webm"
 }
-
-# Maximum file size (25MB)
-MAX_FILE_SIZE = 25 * 1024 * 1024
 
 
 def validate_audio_file(file: UploadFile) -> bool:
@@ -52,20 +52,24 @@ def validate_audio_file(file: UploadFile) -> bool:
     if not file.filename:
         return False
     
-    # Check file extension
+    # Check file extension (primary check)
     file_ext = Path(file.filename).suffix.lower()
     if file_ext not in SUPPORTED_EXTENSIONS:
+        logger.warning(f"Unsupported extension: {file_ext} for {file.filename}")
         return False
     
-    # Check MIME type if available
+    # MIME type check is lenient — some browsers send generic types for audio
     if hasattr(file, 'content_type') and file.content_type:
         mime_type = file.content_type.lower()
         if mime_type not in SUPPORTED_AUDIO_TYPES:
-            return False
+            logger.warning(f"Unrecognized content-type: {mime_type} for {file.filename} — allowing based on extension")
+            # Don't reject on MIME type alone — extension is the better check
     
-    # Check file size if available
+    # Check file size if available (from settings, not hardcoded)
     if hasattr(file, 'size') and file.size:
-        if file.size > MAX_FILE_SIZE:
+        settings = get_settings()
+        if file.size > settings.MAX_FILE_SIZE:
+            logger.warning(f"File too large: {file.size} bytes for {file.filename}")
             return False
         if file.size == 0:
             return False
@@ -101,7 +105,7 @@ def get_file_info(file_path: str) -> dict:
             "mime_type": mime_type,
             "extension": Path(file_path).suffix.lower(),
             "modified": file_stat.st_mtime,
-            "is_valid_size": file_stat.st_size <= MAX_FILE_SIZE,
+            "is_valid_size": file_stat.st_size <= get_settings().MAX_FILE_SIZE,
             "is_supported_format": Path(file_path).suffix.lower() in SUPPORTED_EXTENSIONS
         }
     except Exception as e:
@@ -318,7 +322,7 @@ def validate_file_path(file_path: str) -> bool:
         
         # Check file size
         file_size = os.path.getsize(file_path)
-        if file_size == 0 or file_size > MAX_FILE_SIZE:
+        if file_size == 0 or file_size > get_settings().MAX_FILE_SIZE:
             return False
         
         # Check extension

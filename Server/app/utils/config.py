@@ -3,7 +3,6 @@ Configuration management - NO PYDANTIC.
 """
 
 import os
-from functools import lru_cache
 from typing import List
 
 
@@ -13,24 +12,23 @@ class Settings:
     def __init__(self):
         # Application settings
         self.APP_NAME = "Meeting Analysis API"
-        self.APP_VERSION = "1.0.0" 
+        self.APP_VERSION = "1.1.0" 
         self.DEBUG = os.getenv("DEBUG", "false").lower() == "true"
         
         # API Configuration
-        self.OPENAI_API_KEY = os.getenv("OPENAI_API_KEY", "")
-        #self.ASSEMBLYAI_API_KEY = os.getenv("ASSEMBLYAI_API_KEY", "")
+        self.GEMINI_API_KEY = os.getenv("GEMINI_API_KEY", "")
         
         # Server settings
         self.HOST = os.getenv("HOST", "127.0.0.1")
         self.PORT = int(os.getenv("PORT", "8000"))
         self.ALLOWED_ORIGINS = os.getenv(
             "ALLOWED_ORIGINS",
-            "http://localhost:5173,http://127.0.0.1:5173,https://manthan-ai-brown.vercel.app"
+            "http://localhost:5173,http://localhost:5174,http://127.0.0.1:5173,http://127.0.0.1:5174,https://manthan-ai-brown.vercel.app"
         )
         
         # File handling
-        self.MAX_FILE_SIZE = 25 * 1024 * 1024  # 25MB
-        self.MAX_AUDIO_DURATION = 600  # 10 minutes
+        self.MAX_FILE_SIZE = 150 * 1024 * 1024  # 150MB
+        self.MAX_AUDIO_DURATION = 7200  # 120 minutes
         self.SUPPORTED_FORMATS = "mp3,wav,mp4,m4a,ogg,flac,webm"
         self.TEMP_DIR = "/tmp/meeting_analysis"
 
@@ -56,9 +54,7 @@ class Settings:
         return [fmt.strip().lower() for fmt in self.SUPPORTED_FORMATS.split(",")]
     
     def validate_api_keys(self) -> bool:
-        if not self.OPENAI_API_KEY:
-            return False
-        if not self.OPENAI_API_KEY.startswith("sk-"):
+        if not self.GEMINI_API_KEY:
             return False
         return True
     
@@ -92,6 +88,5 @@ class Settings:
         }
 
 
-@lru_cache()
 def get_settings() -> Settings:
     return Settings()

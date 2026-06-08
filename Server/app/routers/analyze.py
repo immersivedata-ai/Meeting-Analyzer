@@ -96,13 +96,15 @@ async def analyze_meeting(
     5. Returns structured analysis results
     6. Saves results to the user's history
     
-    Supported formats: MP3, WAV, MP4, M4A, OGG, FLAC (max 25MB)
+    Supported formats: MP3, WAV, MP4, M4A, OGG, FLAC (max 150MB, up to 120 minutes)
     """
     
     session_id = str(uuid.uuid4())
     temp_dir = None
     temp_filepath = None
     start_time = time.time()
+    
+    logger.info(f"[ANALYZE] New session {session_id} — file: {file.filename}, size: {getattr(file, 'size', 'unknown')} bytes, user: {user.get('email')}")
     
     try:
         # Validate API key first
@@ -147,6 +149,8 @@ async def analyze_meeting(
             content = await file.read()
             temp_file.write(content)
         
+        logger.info(f"[ANALYZE] File saved: {temp_filepath} ({os.path.getsize(temp_filepath) / 1024 / 1024:.1f} MB)")
+        
         # Validate saved file
         if not audio_processor.validate_audio_file(temp_filepath):
             raise HTTPException(
@@ -166,13 +170,15 @@ async def analyze_meeting(
             )
         
         # Process audio file
-        logger.info(f"Processing audio file: {file.filename}")
+        logger.info(f"[ANALYZE] Processing audio (pydub compression)...")
+        t_proc = time.time()
         processed_audio_path = await audio_processor.process_audio(
             temp_filepath, session_id
         )
+        logger.info(f"[ANALYZE] Audio processed in {time.time() - t_proc:.1f}s — output: {processed_audio_path} ({os.path.getsize(processed_audio_path) / 1024 / 1024:.1f} MB)")
         
         # Analyze using API services
-        logger.info("Performing analysis with OpenAI API...")
+        logger.info("Performing analysis with Gemini...")
         async with ProductionNLPAnalyzer() as nlp_analyzer:
             analysis_result = await nlp_analyzer.analyze_meeting(processed_audio_path)
         
@@ -193,6 +199,8 @@ async def analyze_meeting(
         
         # Save to user's history
         try:
+            logger.info(f"[ANALYZE] Saving to MongoDB...")
+            t_save = time.time()
             # Serialize Pydantic models to plain dicts for MongoDB
             transcript_data = [seg.dict() if hasattr(seg, 'dict') else seg for seg in response.transcript]
             action_items_data = [item.dict() if hasattr(item, 'dict') else item for item in response.action_items]
@@ -211,7 +219,7 @@ async def analyze_meeting(
                 "word_count": word_count,
                 "created_at": datetime.now(timezone.utc),
             })
-            logger.info(f"Analysis saved to history for user: {user.get('email')}, session: {session_id}")
+            logger.info(f"[ANALYZE] Saved to MongoDB in {time.time() - t_save:.1f}s — user: {user.get('email')}, session: {session_id}")
         except Exception as save_error:
             logger.error(f"Failed to save analysis to history: {save_error}")
             # Don't fail the request — the analysis still succeeded
@@ -219,7 +227,7 @@ async def analyze_meeting(
         # Schedule cleanup
         background_tasks.add_task(cleanup_temp_files, temp_dir)
         
-        logger.info(f"Analysis completed for session: {session_id} in {processing_time:.2f}s")
+        logger.info(f"[ANALYZE] COMPLETE — session: {session_id}, total: {processing_time:.2f}s")
         return response
         
     except HTTPException:

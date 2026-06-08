@@ -13,7 +13,7 @@ if __name__ == "__main__":
     
     print(f"Starting Meeting Analysis API on {host}:{port}")
     print(f"Reload mode: {reload}")
-    print(f"OpenAI configured: {'✓' if os.getenv('OPENAI_API_KEY') else '✗'}")
+    print(f"Gemini configured: {'yes' if os.getenv('GEMINI_API_KEY') else 'no'}")
     
     uvicorn.run(
         "app.main:app",

@@ -19,13 +19,14 @@ function transformResponse(data: BackendAnalysisResponse): AnalysisResults {
   }
 }
 
-export async function analyzeFile(file: File): Promise<AnalysisResults> {
+export async function analyzeFile(file: File, signal?: AbortSignal): Promise<AnalysisResults> {
   const formData = new FormData()
   formData.append('file', file)
 
   const data = await apiFetch<BackendAnalysisResponse>('/analyze', {
     method: 'POST',
     body: formData,
+    signal,
   })
 
   return transformResponse(data)

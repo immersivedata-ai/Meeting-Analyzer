@@ -1,6 +1,6 @@
-import { useState, useCallback } from 'react';
+import { useState, useCallback, useRef, useEffect } from 'react';
 import { useDropzone } from 'react-dropzone';
-import { Upload, FileAudio, AlertTriangle, Loader2, Play } from 'lucide-react';
+import { Upload, FileAudio, AlertTriangle, Loader2, Play, XCircle } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Progress } from '@/components/ui/progress';
 import { Alert, AlertDescription } from '@/components/ui/alert';
@@ -13,9 +13,12 @@ const ACCEPTED_FORMATS = {
   'audio/wav': ['.wav'],
   'audio/mp4': ['.m4a'],
   'video/mp4': ['.mp4'],
+  'audio/ogg': ['.ogg'],
+  'audio/flac': ['.flac'],
+  'audio/webm': ['.webm'],
 };
 
-const MAX_FILE_SIZE = 25 * 1024 * 1024;
+const MAX_FILE_SIZE = 150 * 1024 * 1024;
 
 const stepLabels: Record<string, string> = {
   'Uploading...': 'Uploading your recording',
@@ -28,11 +31,45 @@ export const FileUpload = ({ onFileAnalyzed, isProcessing, setIsProcessing }: Fi
   const [uploadProgress, setUploadProgress] = useState(0);
   const [processingStep, setProcessingStep] = useState('');
   const [error, setError] = useState<string | null>(null);
+  const [elapsed, setElapsed] = useState(0);
+  const abortRef = useRef<AbortController | null>(null);
+  const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+
+  useEffect(() => {
+    return () => {
+      if (timerRef.current) clearInterval(timerRef.current);
+    };
+  }, []);
+
+  const startTimer = () => {
+    setElapsed(0);
+    timerRef.current = setInterval(() => setElapsed(e => e + 1), 1000);
+  };
+
+  const stopTimer = () => {
+    if (timerRef.current) {
+      clearInterval(timerRef.current);
+      timerRef.current = null;
+    }
+  };
+
+  const handleCancel = () => {
+    if (abortRef.current) {
+      abortRef.current.abort();
+      abortRef.current = null;
+    }
+    stopTimer();
+    setIsProcessing(false);
+    setUploadProgress(0);
+    setProcessingStep('');
+    setError('Processing cancelled');
+  };
 
   const onDrop = useCallback(async (acceptedFiles: File[]) => {
     setError(null);
     setIsProcessing(true);
     setUploadProgress(0);
+    startTimer();
 
     const isDemoMode = acceptedFiles.length === 0;
 
@@ -52,6 +89,7 @@ export const FileUpload = ({ onFileAnalyzed, isProcessing, setIsProcessing }: Fi
       }
 
       setProcessingStep('Analyzing...');
+      // Real API call happens here — can take 2-5 min for large files
 
       let results;
 
@@ -60,8 +98,16 @@ export const FileUpload = ({ onFileAnalyzed, isProcessing, setIsProcessing }: Fi
         await new Promise(resolve => setTimeout(resolve, 1500));
       } else {
         try {
-          results = await analyzeFile(file);
+          // Create abort controller for cancel support
+          const controller = new AbortController();
+          abortRef.current = controller;
+
+          results = await analyzeFile(file, controller.signal);
+          abortRef.current = null;
         } catch (apiError) {
+          if (apiError instanceof Error && apiError.name === 'AbortError') {
+            return; // User cancelled — handleCancel already cleaned up
+          }
           throw new Error(`Server error: ${(apiError as Error).message || 'Failed to process file'}. Check server logs.`);
         }
       }
@@ -74,6 +120,7 @@ export const FileUpload = ({ onFileAnalyzed, isProcessing, setIsProcessing }: Fi
       setProcessingStep('Complete!');
 
       setTimeout(() => {
+        stopTimer();
         onFileAnalyzed(results);
         setIsProcessing(false);
         setUploadProgress(0);
@@ -81,12 +128,19 @@ export const FileUpload = ({ onFileAnalyzed, isProcessing, setIsProcessing }: Fi
       }, 500);
 
     } catch (err) {
+      stopTimer();
       setError(err instanceof Error ? err.message : 'Upload failed');
       setIsProcessing(false);
       setUploadProgress(0);
       setProcessingStep('');
     }
   }, [onFileAnalyzed, setIsProcessing]);
+
+  const formatTime = (s: number) => {
+    const m = Math.floor(s / 60);
+    const sec = s % 60;
+    return m > 0 ? `${m}m ${sec}s` : `${sec}s`;
+  };
 
   const { getRootProps, getInputProps, isDragActive } = useDropzone({
     onDrop,
@@ -110,7 +164,9 @@ export const FileUpload = ({ onFileAnalyzed, isProcessing, setIsProcessing }: Fi
               {stepLabels[processingStep] || processingStep}
             </p>
             <p className="text-sm text-muted-foreground">
-              {uploadProgress < 100 ? 'This takes about 15–30 seconds' : 'Redirecting to your results...'}
+              {uploadProgress < 100
+                ? `Elapsed: ${formatTime(elapsed)} — large files may take several minutes`
+                : 'Redirecting to your results...'}
             </p>
           </div>
 
@@ -119,6 +175,16 @@ export const FileUpload = ({ onFileAnalyzed, isProcessing, setIsProcessing }: Fi
           <p className="text-xs text-muted-foreground tabular-nums">
             {uploadProgress}%
           </p>
+
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={handleCancel}
+            className="text-muted-foreground hover:text-destructive"
+          >
+            <XCircle className="w-4 h-4 mr-1.5" />
+            Cancel
+          </Button>
         </div>
       </div>
     );
@@ -153,7 +219,7 @@ export const FileUpload = ({ onFileAnalyzed, isProcessing, setIsProcessing }: Fi
               {isDragActive ? 'Drop to upload' : 'Drop your recording here'}
             </p>
             <p className="text-sm text-muted-foreground">
-              MP3, WAV, M4A, or MP4 — up to 25 MB
+              MP3, WAV, M4A, or MP4 — up to 150 MB
             </p>
           </div>
 

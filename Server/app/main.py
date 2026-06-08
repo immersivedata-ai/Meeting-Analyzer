@@ -31,11 +31,11 @@ async def lifespan(app: FastAPI):
     logger.info(f"Starting {settings.APP_NAME} v{settings.APP_VERSION}")
     logger.info(f"Debug mode: {settings.DEBUG}")
 
-    api_key = os.getenv("OPENAI_API_KEY")
+    api_key = os.getenv("GEMINI_API_KEY")
     if api_key:
-        logger.info(f"OPENAI_API_KEY loaded (length: {len(api_key)} chars)")
+        logger.info(f"GEMINI_API_KEY loaded (length: {len(api_key)} chars)")
     else:
-        logger.error("OPENAI_API_KEY missing")
+        logger.error("GEMINI_API_KEY missing")
 
     try:
         if not settings.validate_api_keys():

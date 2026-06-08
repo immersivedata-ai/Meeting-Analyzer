@@ -37,8 +37,8 @@ class ProductionAudioProcessor:
     
     def __init__(self):
         """Initialize audio processor."""
-        self.target_sample_rate = 16000  # Optimal for Whisper API
-        self.max_duration = 600  # 10 minutes max for single API call
+        self.target_sample_rate = 16000  # Optimal for speech
+        self.max_duration = 7200  # 120 minutes
         self._ready = True
         logger.info("Production Audio Processor initialized (pydub only)")
     
@@ -91,7 +91,7 @@ class ProductionAudioProcessor:
         
         # Create output directory
         output_dir = tempfile.mkdtemp(prefix="audio_proc_")
-        output_path = os.path.join(output_dir, f"{session_id}_processed.wav")
+        output_path = os.path.join(output_dir, f"{session_id}_processed.mp3")
         
         try:
             logger.debug("Processing with pydub")
@@ -110,19 +110,16 @@ class ProductionAudioProcessor:
             # Set sample rate to 16kHz (optimal for Whisper)
             audio = audio.set_frame_rate(self.target_sample_rate)
             
-            # Check duration and split if too long
-            duration = len(audio) / 1000.0  # Convert ms to seconds
+            # Check duration (log only — Gemini handles long audio natively)
+            duration = len(audio) / 1000.0
             if duration > self.max_duration:
-                logger.warning(f"Audio duration {duration:.1f}s exceeds maximum {self.max_duration}s")
-                # Truncate to max duration
-                max_ms = int(self.max_duration * 1000)
-                audio = audio[:max_ms]
-            
+                logger.warning(f"Audio duration {duration:.1f}s exceeds recommended {self.max_duration}s — may take longer to process")
+
             # Normalize volume
             audio = audio.normalize()
-            
-            # Export as WAV for consistent format
-            audio.export(output_path, format="wav")
+
+            # Export as MP3 (compressed) for efficient upload to Gemini
+            audio.export(output_path, format="mp3", bitrate="64k")
             
             # Verify output file was created
             if not os.path.exists(output_path):

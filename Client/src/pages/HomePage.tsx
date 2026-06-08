@@ -201,7 +201,7 @@ const HomePage = () => {
           <FileUpload
             onFileAnalyzed={(results) => {
               handleFileAnalyzed(results);
-              refreshHistory();
+              loadHistory();
             }}
             isProcessing={isProcessing}
             setIsProcessing={setIsProcessing}
