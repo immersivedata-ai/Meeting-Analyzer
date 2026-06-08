@@ -9,11 +9,27 @@ import asyncio
 import logging
 
 from pydub import AudioSegment
+from pydub.utils import which
 
 from app.utils.config import get_settings
 
 logger = logging.getLogger(__name__)
 settings = get_settings()
+
+# Explicitly set ffmpeg/ffprobe paths for Windows
+_ffmpeg_path = which("ffmpeg")
+_ffprobe_path = which("ffprobe")
+if _ffmpeg_path:
+    AudioSegment.converter = _ffmpeg_path
+    logger.info(f"FFmpeg found: {_ffmpeg_path}")
+else:
+    logger.warning("FFmpeg not found in PATH — MP3/MP4/M4A won't work")
+
+if _ffprobe_path:
+    AudioSegment.ffprobe = _ffprobe_path
+    logger.info(f"FFprobe found: {_ffprobe_path}")
+else:
+    logger.warning("FFprobe not found in PATH — metadata extraction may fail")
 
 
 class ProductionAudioProcessor:
@@ -152,28 +168,24 @@ class ProductionAudioProcessor:
     
     def validate_audio_file(self, file_path: str) -> bool:
         """
-        Validate that the file is a proper audio file using pydub.
-        
-        Args:
-            file_path: Path to audio file
-            
-        Returns:
-            True if valid audio file, False otherwise
+        Validate that the file is a proper audio file.
+        Falls back to extension check if pydub can't decode.
         """
         try:
-            # Check if file exists
             if not os.path.exists(file_path):
                 return False
-            
-            # Check file size
+
             if os.path.getsize(file_path) == 0:
                 return False
-            
-            # Try to load with pydub
+
             audio = AudioSegment.from_file(file_path)
             return len(audio) > 0
-                    
+
         except Exception:
+            ext = os.path.splitext(file_path)[1].lower().lstrip(".")
+            if ext in settings.supported_formats_list:
+                logger.warning(f"pydub failed to decode {file_path}, accepting by extension")
+                return True
             return False
     
     def cleanup_temp_files(self, file_path: str) -> None:

@@ -2,18 +2,16 @@ import { useEffect } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { Header } from '@/components/Header';
 import { ResultsSection } from '@/components/ResultsSection';
-import { FloatingActionButton } from '@/components/FloatingActionButton';
 import { Button } from '@/components/ui/button';
 import { useToast } from '@/hooks/use-toast';
-import { useAuth } from '@/contexts/AuthContext';
+import { ArrowLeft, Download, Share2, Upload } from 'lucide-react';
 import type { AnalysisResults } from '@/types/analysis';
 
 const ResultsPage = () => {
   const location = useLocation();
   const navigate = useNavigate();
   const { toast } = useToast();
-  const { logout } = useAuth();
-  
+
   const results: AnalysisResults | null = location.state?.results || null;
 
   useEffect(() => {
@@ -28,7 +26,7 @@ const ResultsPage = () => {
 
   const handleExport = () => {
     if (!results) return;
-    
+
     const exportData = {
       transcript: results.transcript,
       summary: results.summary,
@@ -36,49 +34,44 @@ const ResultsPage = () => {
       key_decisions: results.key_decisions,
       exported_at: new Date().toISOString(),
     };
-    
-    const blob = new Blob([JSON.stringify(exportData, null, 2)], { 
-      type: 'application/json' 
+
+    const blob = new Blob([JSON.stringify(exportData, null, 2)], {
+      type: 'application/json'
     });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
-    a.download = `meeting-analysis-${Date.now()}.json`;
+    a.download = `manthan-analysis-${Date.now()}.json`;
     a.click();
     URL.revokeObjectURL(url);
-    
+
     toast({
-      title: "Export successful",
-      description: "Meeting analysis exported as JSON",
+      title: "Exported",
+      description: "Analysis saved as JSON",
     });
   };
 
   const handleShare = () => {
     if (!results) return;
-    
-    const shareText = `Meeting Analysis Summary:\n\n${results.summary}\n\nAction Items:\n${results.action_items.map(item => `• ${item.text}`).join('\n')}`;
-    
+
+    const shareText = [
+      `Meeting Summary:`,
+      ``,
+      results.summary,
+      ``,
+      `Action Items:`,
+      ...(results.action_items || []).map((item: { text: string }) => `• ${item.text}`),
+    ].join('\n');
+
     if (navigator.share) {
-      navigator.share({
-        title: 'Meeting Analysis',
-        text: shareText,
-      });
+      navigator.share({ title: 'Meeting Analysis', text: shareText });
     } else {
       navigator.clipboard.writeText(shareText);
       toast({
-        title: "Copied to clipboard",
-        description: "Meeting summary copied for sharing",
+        title: "Copied",
+        description: "Summary copied to clipboard",
       });
     }
-  };
-
-  const handleSignOut = async () => {
-    await logout();
-    navigate('/');
-    toast({
-      title: "Signed out",
-      description: "You've been successfully signed out",
-    });
   };
 
   if (!results) {
@@ -87,53 +80,60 @@ const ResultsPage = () => {
 
   return (
     <div className="min-h-screen">
-      <Header 
-        processingTime={results.processing_time} 
-        isProcessing={false}
-      />
-      
+      <Header processingTime={results.processing_time} />
+
       <main className="container mx-auto px-6 py-8">
-        <div className="space-y-6">
-          <div className="flex items-center justify-between">
-            <div>
-              <h2 className="text-2xl font-bold mb-2">Analysis Complete</h2>
-              <p className="text-muted-foreground">
-                Your meeting has been processed and analyzed
-              </p>
-            </div>
-            <div className="flex items-center gap-3">
-              <Button
-                onClick={handleNewUpload}
-                variant="outline"
-                className="px-6 py-2"
-              >
-                New Upload
-              </Button>
-              <Button
-                onClick={handleSignOut}
-                variant="ghost"
-                className="px-4 py-2 text-sm text-muted-foreground hover:text-foreground"
-              >
-                Sign Out
-              </Button>
-            </div>
+        {/* Page header */}
+        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 mb-8 animate-fade-in">
+          <div>
+            <button
+              onClick={handleNewUpload}
+              className="flex items-center gap-1.5 text-sm text-muted-foreground hover:text-foreground transition-colors mb-2"
+            >
+              <ArrowLeft className="w-3.5 h-3.5" />
+              New upload
+            </button>
+            <h1 className="text-2xl font-bold tracking-tight">Analysis results</h1>
           </div>
-          
-          <ResultsSection results={results} />
+
+          <div className="flex items-center gap-2">
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={handleExport}
+              className="h-9"
+            >
+              <Download className="w-3.5 h-3.5 mr-1.5" />
+              Export
+            </Button>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={handleShare}
+              className="h-9"
+            >
+              <Share2 className="w-3.5 h-3.5 mr-1.5" />
+              Share
+            </Button>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={handleNewUpload}
+              className="h-9"
+            >
+              <Upload className="w-3.5 h-3.5 mr-1.5" />
+              New
+            </Button>
+          </div>
         </div>
+
+        <ResultsSection results={results} />
       </main>
 
-      <FloatingActionButton
-        onNewUpload={handleNewUpload}
-        onExport={handleExport}
-        onShare={handleShare}
-        hasResults={true}
-      />
-
-      <div className="fixed inset-0 -z-10 overflow-hidden">
-        <div className="absolute -top-40 -right-40 w-80 h-80 rounded-full bg-primary/10 blur-3xl animate-float" />
-        <div className="absolute -bottom-40 -left-40 w-80 h-80 rounded-full bg-primary-glow/10 blur-3xl animate-float" style={{ animationDelay: '2s' }} />
-        <div className="absolute top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2 w-96 h-96 rounded-full bg-primary/5 blur-3xl animate-float" style={{ animationDelay: '4s' }} />
+      {/* Background */}
+      <div className="fixed inset-0 -z-10 overflow-hidden pointer-events-none">
+        <div className="absolute top-0 right-0 w-[600px] h-[600px] rounded-full bg-primary/3 blur-[120px]" />
+        <div className="absolute bottom-0 left-1/4 w-[500px] h-[500px] rounded-full bg-primary/4 blur-[100px]" />
       </div>
     </div>
   );

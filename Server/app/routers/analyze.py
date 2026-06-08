@@ -8,16 +8,21 @@ import traceback
 import uuid
 import time
 import logging
-from typing import Dict, Any
+from datetime import datetime, timezone
+from typing import Dict, Any, List, Optional
 
+from bson import ObjectId
 from fastapi import APIRouter, File, UploadFile, HTTPException, BackgroundTasks, Depends
 from fastapi.responses import JSONResponse
+from pydantic import BaseModel, Field
 
 from app.models.schemas import AnalysisResponse
 from app.services.audio_processor import ProductionAudioProcessor
 from app.services.nlp_analyzer import ProductionNLPAnalyzer
 from app.utils.file_handler import validate_audio_file, cleanup_temp_files
 from app.utils.config import get_settings, Settings
+from app.database import analyses_collection
+from app.routers.auth import get_current_user
 
 router = APIRouter()
 
@@ -26,15 +31,59 @@ logger = logging.getLogger(__name__)
 # Initialize services
 audio_processor = ProductionAudioProcessor()
 
+
+# --- History response models ---
+
+class AnalysisSummary(BaseModel):
+    """Lightweight summary returned in history list."""
+    id: str
+    filename: str
+    created_at: str
+    action_items_count: int = 0
+    decisions_count: int = 0
+    word_count: int = 0
+    duration_seconds: float = 0
+    processing_time: float = 0
+
+    class Config:
+        from_attributes = True
+
+
+class AnalysisHistoryResponse(BaseModel):
+    analyses: List[AnalysisSummary]
+    total: int
+
+
+class DeleteResponse(BaseModel):
+    message: str
+
+
+def _analysis_to_summary(doc: dict) -> AnalysisSummary:
+    return AnalysisSummary(
+        id=str(doc["_id"]),
+        filename=doc.get("filename", "Unknown"),
+        created_at=doc.get("created_at", datetime.now(timezone.utc)).isoformat(),
+        action_items_count=len(doc.get("action_items", [])),
+        decisions_count=len(doc.get("key_decisions", [])),
+        word_count=doc.get("word_count", 0),
+        duration_seconds=doc.get("duration", 0),
+        processing_time=doc.get("processing_time", 0),
+    )
+
+
+# --- Existing endpoints ---
+
 def get_settings_dependency() -> Settings:
     """Dependency to get settings."""
     return get_settings()
+
 
 @router.post("/analyze", response_model=AnalysisResponse)
 async def analyze_meeting(
     background_tasks: BackgroundTasks,
     file: UploadFile = File(...),
-    settings: Settings = Depends(get_settings_dependency)
+    settings: Settings = Depends(get_settings_dependency),
+    user: dict = Depends(get_current_user),
 ) -> AnalysisResponse:
     """
     Analyze uploaded meeting recording using OpenAI API services.
@@ -45,6 +94,7 @@ async def analyze_meeting(
     3. Transcribes using OpenAI Whisper API
     4. Analyzes content using GPT models
     5. Returns structured analysis results
+    6. Saves results to the user's history
     
     Supported formats: MP3, WAV, MP4, M4A, OGG, FLAC (max 25MB)
     """
@@ -130,12 +180,41 @@ async def analyze_meeting(
         processing_time = time.time() - start_time
         analysis_result["processing_time"] = round(processing_time, 2)
         
+        # Calculate word count
+        transcript = analysis_result.get("transcript", [])
+        word_count = sum(len(seg.get("text", "").split()) for seg in transcript if isinstance(seg, dict))
+        
         # Build response
         response = AnalysisResponse(
             session_id=session_id,
             filename=file.filename,
             **analysis_result
         )
+        
+        # Save to user's history
+        try:
+            # Serialize Pydantic models to plain dicts for MongoDB
+            transcript_data = [seg.dict() if hasattr(seg, 'dict') else seg for seg in response.transcript]
+            action_items_data = [item.dict() if hasattr(item, 'dict') else item for item in response.action_items]
+            decisions_data = [d.dict() if hasattr(d, 'dict') else d for d in response.key_decisions]
+
+            await analyses_collection.insert_one({
+                "user_id": user["_id"],
+                "session_id": session_id,
+                "filename": file.filename,
+                "transcript": transcript_data,
+                "summary": response.summary,
+                "action_items": action_items_data,
+                "key_decisions": decisions_data,
+                "processing_time": processing_time,
+                "duration": audio_info.get("duration", 0),
+                "word_count": word_count,
+                "created_at": datetime.now(timezone.utc),
+            })
+            logger.info(f"Analysis saved to history for user: {user.get('email')}, session: {session_id}")
+        except Exception as save_error:
+            logger.error(f"Failed to save analysis to history: {save_error}")
+            # Don't fail the request — the analysis still succeeded
         
         # Schedule cleanup
         background_tasks.add_task(cleanup_temp_files, temp_dir)
@@ -163,19 +242,94 @@ async def analyze_meeting(
             detail="An error occurred while processing your file. Please try again or contact support if the problem persists."
         )
 
+
+# --- History endpoints ---
+
+@router.get("/analyses", response_model=AnalysisHistoryResponse)
+async def list_analyses(
+    user: dict = Depends(get_current_user),
+    limit: int = 50,
+    skip: int = 0,
+):
+    """
+    List all analyses for the authenticated user, newest first.
+    """
+    cursor = analyses_collection.find(
+        {"user_id": user["_id"]}
+    ).sort("created_at", -1).skip(skip).limit(limit)
+
+    total = await analyses_collection.count_documents({"user_id": user["_id"]})
+    documents = await cursor.to_list(length=limit)
+
+    return AnalysisHistoryResponse(
+        analyses=[_analysis_to_summary(doc) for doc in documents],
+        total=total,
+    )
+
+
+@router.get("/analyses/{analysis_id}")
+async def get_analysis(
+    analysis_id: str,
+    user: dict = Depends(get_current_user),
+):
+    """
+    Get a single analysis by ID. Must belong to the authenticated user.
+    """
+    try:
+        oid = ObjectId(analysis_id)
+    except Exception:
+        raise HTTPException(status_code=400, detail="Invalid analysis ID")
+
+    doc = await analyses_collection.find_one({
+        "_id": oid,
+        "user_id": user["_id"],
+    })
+
+    if not doc:
+        raise HTTPException(status_code=404, detail="Analysis not found")
+
+    doc["id"] = str(doc.pop("_id"))
+    doc.pop("user_id", None)
+    doc["created_at"] = doc["created_at"].isoformat()
+
+    return doc
+
+
+@router.delete("/analyses/{analysis_id}", response_model=DeleteResponse)
+async def delete_analysis(
+    analysis_id: str,
+    user: dict = Depends(get_current_user),
+):
+    """
+    Delete an analysis by ID. Must belong to the authenticated user.
+    """
+    try:
+        oid = ObjectId(analysis_id)
+    except Exception:
+        raise HTTPException(status_code=400, detail="Invalid analysis ID")
+
+    result = await analyses_collection.delete_one({
+        "_id": oid,
+        "user_id": user["_id"],
+    })
+
+    if result.deleted_count == 0:
+        raise HTTPException(status_code=404, detail="Analysis not found")
+
+    return DeleteResponse(message="Analysis deleted")
+
+
 @router.get("/sessions/{session_id}")
 async def get_session_status(session_id: str):
     """
     Get status of a processing session.
-    
-    Note: In this stateless implementation, all sessions are marked as completed.
-    In a production system with persistent storage, this would check actual status.
     """
     return {
         "session_id": session_id,
         "status": "completed",
         "message": "Session processing completed"
     }
+
 
 @router.delete("/sessions/{session_id}")
 async def delete_session(
@@ -184,18 +338,14 @@ async def delete_session(
 ):
     """
     Delete session data.
-    
-    Note: In this stateless implementation, this is a no-op.
-    In a production system, this would clean up stored session data.
     """
-    # In a stateless system, there's nothing to delete
-    # But we can trigger cleanup of any remaining temp files
     background_tasks.add_task(cleanup_temp_files)
-    
+
     return {
         "session_id": session_id,
         "message": "Session cleanup initiated"
     }
+
 
 @router.get("/status")
 async def service_status(settings: Settings = Depends(get_settings_dependency)):

@@ -1,21 +1,20 @@
 import { useState } from 'react';
-import { 
-  FileText, 
-  BarChart3, 
-  CheckSquare, 
+import {
+  FileText,
+  BarChart3,
+  CheckSquare,
   Target,
   Copy,
   Download,
   Search,
   Clock,
-  Users,
-  Hash
+  Hash,
+  CheckCircle2,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Badge } from '@/components/ui/badge';
-import { Textarea } from '@/components/ui/textarea';
 import { useToast } from '@/hooks/use-toast';
 import type { AnalysisResults } from '@/types/analysis';
 
@@ -23,280 +22,318 @@ interface ResultsSectionProps {
   results: AnalysisResults;
 }
 
+const statItems = [
+  { icon: Clock, label: 'Processing time', getValue: (r: AnalysisResults) => `${r.processing_time?.toFixed(1) || '—'}s` },
+  { icon: Hash, label: 'Word count', getValue: (r: AnalysisResults) => {
+    const text = r.transcript?.map(s => s.text).join(' ') || '';
+    return text.split(' ').filter(w => w.length > 0).length.toLocaleString();
+  }},
+  { icon: FileText, label: 'Est. duration', getValue: (r: AnalysisResults) => {
+    const text = r.transcript?.map(s => s.text).join(' ') || '';
+    const count = text.split(' ').filter(w => w.length > 0).length;
+    return `${Math.max(1, Math.ceil(count / 150))} min`;
+  }},
+  { icon: CheckCircle2, label: 'Action items', getValue: (r: AnalysisResults) => `${r.action_items?.length || 0}` },
+];
+
+const tabs = [
+  { id: 'transcript', icon: FileText, label: 'Transcript' },
+  { id: 'summary', icon: BarChart3, label: 'Summary' },
+  { id: 'actions', icon: CheckSquare, label: 'Actions' },
+  { id: 'decisions', icon: Target, label: 'Decisions' },
+];
+
+const priorityColors: Record<number, string> = {
+  0: 'border-red-500/40 text-red-400 bg-red-500/5',
+  1: 'border-amber-500/40 text-amber-400 bg-amber-500/5',
+  2: 'border-emerald-500/40 text-emerald-400 bg-emerald-500/5',
+};
+
+const priorityLabels: Record<number, string> = {
+  0: 'High',
+  1: 'Medium',
+  2: 'Low',
+};
+
 export const ResultsSection = ({ results }: ResultsSectionProps) => {
   const [searchTerm, setSearchTerm] = useState('');
   const [actionItems, setActionItems] = useState(results.action_items?.map(item => item.text) || []);
+  const [completedItems, setCompletedItems] = useState<Set<number>>(new Set());
   const [newActionItem, setNewActionItem] = useState('');
   const { toast } = useToast();
 
   const copyToClipboard = async (text: string, label: string) => {
     try {
       await navigator.clipboard.writeText(text);
-      toast({
-        title: "Copied!",
-        description: `${label} copied to clipboard`,
-      });
-    } catch (err) {
-      toast({
-        title: "Copy failed",
-        description: "Please try again",
-        variant: "destructive",
-      });
+      toast({ title: "Copied", description: `${label} copied to clipboard` });
+    } catch {
+      toast({ title: "Failed", description: "Could not copy to clipboard", variant: "destructive" });
     }
   };
 
   const highlightText = (text: string, search: string) => {
-    if (!search) return text;
-    const regex = new RegExp(`(${search})`, 'gi');
-    return text.replace(regex, '<mark class="bg-primary/20 text-primary">$1</mark>');
+    if (!search || search.length < 2) return text;
+    const regex = new RegExp(`(${search.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')})`, 'gi');
+    return text.replace(regex, '<mark class="bg-primary/20 text-primary rounded-sm px-0.5">$1</mark>');
   };
 
   const addActionItem = () => {
     if (newActionItem.trim()) {
       setActionItems([...actionItems, newActionItem.trim()]);
       setNewActionItem('');
-      toast({
-        title: "Action item added",
-        description: "New task added to your list",
-      });
     }
   };
 
   const removeActionItem = (index: number) => {
     setActionItems(actionItems.filter((_, i) => i !== index));
+    setCompletedItems(prev => {
+      const next = new Set(prev);
+      next.delete(index);
+      return next;
+    });
   };
 
-  // Fixed: Get transcription text from transcript array
+  const toggleCompleted = (index: number) => {
+    setCompletedItems(prev => {
+      const next = new Set(prev);
+      if (next.has(index)) next.delete(index);
+      else next.add(index);
+      return next;
+    });
+  };
+
   const transcriptionText = results.transcript?.map(segment => segment.text).join(' ') || '';
-  const wordCount = transcriptionText.split(' ').filter(word => word.length > 0).length;
-  const estimatedDuration = Math.ceil(wordCount / 150); // Assuming 150 words per minute
 
   return (
-    <div className="space-y-6 animate-slide-up">
+    <div className="space-y-8 animate-fade-in-up">
       {/* Quick Stats */}
-      <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-        <div className="glass rounded-xl p-4 text-center">
-          <Clock className="w-5 h-5 mx-auto mb-2 text-primary" />
-          <div className="text-sm text-muted-foreground">Processing Time</div>
-          <div className="text-lg font-semibold">{results.processing_time?.toFixed(1) || 0}s</div>
-        </div>
-        <div className="glass rounded-xl p-4 text-center">
-          <Hash className="w-5 h-5 mx-auto mb-2 text-primary" />
-          <div className="text-sm text-muted-foreground">Word Count</div>
-          <div className="text-lg font-semibold">{wordCount.toLocaleString()}</div>
-        </div>
-        <div className="glass rounded-xl p-4 text-center">
-          <Users className="w-5 h-5 mx-auto mb-2 text-primary" />
-          <div className="text-sm text-muted-foreground">Est. Duration</div>
-          <div className="text-lg font-semibold">{estimatedDuration}min</div>
-        </div>
-        <div className="glass rounded-xl p-4 text-center">
-          <CheckSquare className="w-5 h-5 mx-auto mb-2 text-primary" />
-          <div className="text-sm text-muted-foreground">Action Items</div>
-          <div className="text-lg font-semibold">{actionItems.length}</div>
-        </div>
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+        {statItems.map((stat) => (
+          <div key={stat.label} className="surface-raised rounded-lg p-4">
+            <div className="flex items-center gap-2 mb-1.5">
+              <stat.icon className="w-4 h-4 text-primary/70" />
+              <span className="text-xs text-muted-foreground">{stat.label}</span>
+            </div>
+            <p className="text-lg font-semibold tabular-nums">{stat.getValue(results)}</p>
+          </div>
+        ))}
       </div>
 
-      {/* Search Bar */}
-      <div className="relative">
-        <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 w-4 h-4 text-muted-foreground" />
-        <Input
-          placeholder="Search in transcription..."
-          value={searchTerm}
-          onChange={(e) => setSearchTerm(e.target.value)}
-          className="pl-10 glass border-glass-border/30"
-        />
-      </div>
-
-      {/* Main Content Tabs */}
-      <Tabs defaultValue="transcription" className="space-y-6">
-        <TabsList className="glass-strong border-glass-border/30 grid grid-cols-4 w-full">
-          <TabsTrigger value="transcription" className="flex items-center space-x-2">
-            <FileText className="w-4 h-4" />
-            <span>Transcript</span>
-          </TabsTrigger>
-          <TabsTrigger value="summary" className="flex items-center space-x-2">
-            <BarChart3 className="w-4 h-4" />
-            <span>Summary</span>
-          </TabsTrigger>
-          <TabsTrigger value="actions" className="flex items-center space-x-2">
-            <CheckSquare className="w-4 h-4" />
-            <span>Actions</span>
-          </TabsTrigger>
-          <TabsTrigger value="decisions" className="flex items-center space-x-2">
-            <Target className="w-4 h-4" />
-            <span>Decisions</span>
-          </TabsTrigger>
-        </TabsList>
-
-        <TabsContent value="transcription" className="space-y-4">
-          <div className="glass rounded-xl p-6">
-            <div className="flex items-center justify-between mb-4">
-              <h3 className="text-lg font-semibold">Full Transcription</h3>
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={() => copyToClipboard(transcriptionText, 'Transcription')}
-                className="glass-strong border-primary/30"
+      <Tabs defaultValue="transcript" className="space-y-6">
+        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+          <TabsList className="surface-raised h-10 p-1 gap-0 inline-flex">
+            {tabs.map((tab) => (
+              <TabsTrigger
+                key={tab.id}
+                value={tab.id}
+                className="h-8 px-3.5 text-sm gap-1.5 data-[state=active]:bg-primary/15 data-[state=active]:text-primary data-[state=active]:shadow-none rounded-md"
               >
-                <Copy className="w-4 h-4 mr-2" />
-                Copy
+                <tab.icon className="w-4 h-4" />
+                <span className="hidden sm:inline">{tab.label}</span>
+              </TabsTrigger>
+            ))}
+          </TabsList>
+
+          <div className="relative w-full sm:w-64">
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
+            <Input
+              placeholder="Search transcript..."
+              value={searchTerm}
+              onChange={(e) => setSearchTerm(e.target.value)}
+              className="pl-9 h-9 text-sm surface-raised"
+            />
+          </div>
+        </div>
+
+        {/* Transcript tab */}
+        <TabsContent value="transcript">
+          <div className="surface-raised rounded-xl p-6">
+            <div className="flex items-center justify-between mb-5">
+              <h3 className="font-semibold">Full transcript</h3>
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => copyToClipboard(transcriptionText, 'Transcript')}
+                className="h-8 text-xs"
+              >
+                <Copy className="w-3.5 h-3.5 mr-1.5" />
+                Copy all
               </Button>
             </div>
-            <div className="space-y-4 max-h-96 overflow-y-auto">
-              {results.transcript?.map((segment, index) => (
-                <div key={segment.id || index} className="p-3 glass-strong rounded-lg">
-                  <div className="flex items-start space-x-3">
-                    <Badge variant="outline" className="text-xs">
-                      {segment.speaker}
-                    </Badge>
-                    <div className="flex-1">
-                      <div 
-                        className="prose prose-invert max-w-none text-sm leading-relaxed"
+
+            {results.transcript && results.transcript.length > 0 ? (
+              <div className="space-y-3 max-h-[500px] overflow-y-auto pr-2">
+                {results.transcript.map((segment, index) => (
+                  <div key={segment.id || index} className="flex gap-3 group">
+                    <div className="flex-shrink-0 w-16 text-right">
+                      <span className="text-xs text-muted-foreground tabular-nums">
+                        {String(Math.floor(segment.start_time / 60)).padStart(2, '0')}:{String(Math.floor(segment.start_time % 60)).padStart(2, '0')}
+                      </span>
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <span className="text-xs font-medium text-primary/80 mr-2">{segment.speaker}</span>
+                      <span
+                        className="text-sm leading-relaxed"
                         dangerouslySetInnerHTML={{
                           __html: highlightText(segment.text, searchTerm)
                         }}
                       />
-                      <div className="text-xs text-muted-foreground mt-2">
-                        {Math.floor(segment.start_time / 60)}:{(segment.start_time % 60).toFixed(0).padStart(2, '0')} - 
-                        {Math.floor(segment.end_time / 60)}:{(segment.end_time % 60).toFixed(0).padStart(2, '0')}
-                      </div>
                     </div>
                   </div>
-                </div>
-              )) || (
-                <div className="text-center text-muted-foreground py-8">
-                  No transcription available
-                </div>
-              )}
-            </div>
+                ))}
+              </div>
+            ) : (
+              <p className="text-sm text-muted-foreground py-8 text-center">No transcript available</p>
+            )}
           </div>
         </TabsContent>
 
-        <TabsContent value="summary" className="space-y-4">
-          <div className="glass rounded-xl p-6">
-            <div className="flex items-center justify-between mb-4">
-              <h3 className="text-lg font-semibold">AI-Generated Summary</h3>
-              <div className="flex space-x-2">
+        {/* Summary tab */}
+        <TabsContent value="summary">
+          <div className="surface-raised rounded-xl p-6">
+            <div className="flex items-center justify-between mb-5">
+              <h3 className="font-semibold">AI-generated summary</h3>
+              <div className="flex items-center gap-2">
                 <Button
-                  variant="outline"
+                  variant="ghost"
                   size="sm"
                   onClick={() => copyToClipboard(results.summary || '', 'Summary')}
-                  className="glass-strong border-primary/30"
+                  className="h-8 text-xs"
                 >
-                  <Copy className="w-4 h-4 mr-2" />
+                  <Copy className="w-3.5 h-3.5 mr-1.5" />
                   Copy
                 </Button>
                 <Button
-                  variant="outline"
+                  variant="ghost"
                   size="sm"
-                  className="glass-strong border-primary/30"
+                  className="h-8 text-xs"
                 >
-                  <Download className="w-4 h-4 mr-2" />
+                  <Download className="w-3.5 h-3.5 mr-1.5" />
                   Export PDF
                 </Button>
               </div>
             </div>
-            <div className="prose prose-invert max-w-none text-sm leading-relaxed">
-              {results.summary || 'No summary available'}
-            </div>
+            {results.summary ? (
+              <div className="prose prose-sm prose-invert max-w-none text-muted-foreground leading-relaxed">
+                {results.summary}
+              </div>
+            ) : (
+              <p className="text-sm text-muted-foreground py-8 text-center">No summary available</p>
+            )}
           </div>
         </TabsContent>
 
-        <TabsContent value="actions" className="space-y-4">
-          <div className="glass rounded-xl p-6">
-            <div className="flex items-center justify-between mb-4">
-              <h3 className="text-lg font-semibold">Action Items</h3>
-              <Badge variant="secondary" className="glass-strong">
-                {actionItems.length} items
+        {/* Actions tab */}
+        <TabsContent value="actions">
+          <div className="surface-raised rounded-xl p-6">
+            <div className="flex items-center justify-between mb-5">
+              <h3 className="font-semibold">Action items</h3>
+              <Badge variant="secondary" className="text-xs">
+                {actionItems.length - completedItems.size} of {actionItems.length} remaining
               </Badge>
             </div>
-            
-            <div className="space-y-3">
-              {actionItems.map((item, index) => (
-                <div key={index} className="flex items-center space-x-3 p-3 glass-strong rounded-lg">
-                  <input
-                    type="checkbox"
-                    className="w-4 h-4 rounded border-primary/30 text-primary focus:ring-primary/20"
-                  />
-                  <span className="flex-1 text-sm">{item}</span>
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    onClick={() => removeActionItem(index)}
-                    className="text-muted-foreground hover:text-red-400"
+
+            <div className="space-y-1 mb-4">
+              {actionItems.length > 0 ? (
+                actionItems.map((item, index) => (
+                  <div
+                    key={index}
+                    className={`flex items-center gap-3 px-3 py-2.5 rounded-lg transition-colors group ${
+                      completedItems.has(index) ? 'opacity-50' : ''
+                    }`}
                   >
-                    ×
-                  </Button>
-                </div>
-              ))}
-              {actionItems.length === 0 && (
-                <div className="text-center text-muted-foreground py-4">
-                  No action items found
-                </div>
+                    <button
+                      onClick={() => toggleCompleted(index)}
+                      className={`flex-shrink-0 w-5 h-5 rounded-full border-2 flex items-center justify-center transition-colors ${
+                        completedItems.has(index)
+                          ? 'border-primary bg-primary'
+                          : 'border-muted-foreground/30 hover:border-primary/50'
+                      }`}
+                    >
+                      {completedItems.has(index) && (
+                        <CheckCircle2 className="w-3.5 h-3.5 text-primary-foreground" />
+                      )}
+                    </button>
+                    <span className={`flex-1 text-sm ${completedItems.has(index) ? 'line-through' : ''}`}>
+                      {item}
+                    </span>
+                    <button
+                      onClick={() => removeActionItem(index)}
+                      className="opacity-0 group-hover:opacity-100 text-muted-foreground hover:text-destructive transition-all text-sm px-1"
+                    >
+                      ×
+                    </button>
+                  </div>
+                ))
+              ) : (
+                <p className="text-sm text-muted-foreground py-4 text-center">No action items yet</p>
               )}
             </div>
 
-            <div className="mt-4 flex space-x-2">
+            <div className="flex gap-2">
               <Input
-                placeholder="Add new action item..."
+                placeholder="Add an action item..."
                 value={newActionItem}
                 onChange={(e) => setNewActionItem(e.target.value)}
-                onKeyPress={(e) => e.key === 'Enter' && addActionItem()}
-                className="glass border-glass-border/30"
+                onKeyDown={(e) => e.key === 'Enter' && addActionItem()}
+                className="h-9 text-sm surface-raised"
               />
-              <Button onClick={addActionItem} className="gradient-primary shadow-glow">
+              <Button
+                onClick={addActionItem}
+                size="sm"
+                className="gradient-primary h-9"
+                disabled={!newActionItem.trim()}
+              >
                 Add
               </Button>
             </div>
           </div>
         </TabsContent>
 
-        <TabsContent value="decisions" className="space-y-4">
-          <div className="glass rounded-xl p-6">
-            <div className="flex items-center justify-between mb-4">
-              <h3 className="text-lg font-semibold">Key Decisions</h3>
-              <Badge variant="secondary" className="glass-strong">
-                {results.key_decisions?.length || 0} decisions
+        {/* Decisions tab */}
+        <TabsContent value="decisions">
+          <div className="surface-raised rounded-xl p-6">
+            <div className="flex items-center justify-between mb-5">
+              <h3 className="font-semibold">Key decisions</h3>
+              <Badge variant="secondary" className="text-xs">
+                {results.key_decisions?.length || 0} total
               </Badge>
             </div>
-            
-            <div className="space-y-3">
-              {results.key_decisions?.map((decision, index) => (
-                <div key={decision.id || index} className="p-4 glass-strong rounded-lg border-l-4 border-primary/50">
-                  <div className="flex items-start justify-between">
-                    <div className="flex-1">
-                      <p className="text-sm font-medium mb-2">{decision.decision}</p>
-                      {decision.rationale && (
-                        <p className="text-xs text-muted-foreground mb-1">
-                          <strong>Rationale:</strong> {decision.rationale}
-                        </p>
-                      )}
-                      <p className="text-xs text-muted-foreground">
-                        <strong>Impact:</strong> {decision.impact}
-                      </p>
-                    </div>
-                    <div className="flex items-center space-x-2 ml-4">
-                      <Badge 
-                        variant="outline" 
-                        className={`
-                          text-xs
-                          ${index % 3 === 0 ? 'border-red-500/30 text-red-400' : 
-                            index % 3 === 1 ? 'border-yellow-500/30 text-yellow-400' : 
-                            'border-green-500/30 text-green-400'}
-                        `}
+
+            {results.key_decisions && results.key_decisions.length > 0 ? (
+              <div className="space-y-3">
+                {results.key_decisions.map((decision, index) => (
+                  <div
+                    key={decision.id || index}
+                    className={`surface-raised rounded-lg p-4 border-l-[3px] ${priorityColors[index % 3]}`}
+                  >
+                    <div className="flex items-start justify-between gap-4">
+                      <div className="flex-1 min-w-0">
+                        <p className="text-sm font-medium mb-1">{decision.decision}</p>
+                        {decision.rationale && (
+                          <p className="text-xs text-muted-foreground mb-1.5">
+                            {decision.rationale}
+                          </p>
+                        )}
+                        {decision.impact && (
+                          <p className="text-xs text-muted-foreground">
+                            Impact: {decision.impact}
+                          </p>
+                        )}
+                      </div>
+                      <Badge
+                        variant="outline"
+                        className={`text-[10px] uppercase tracking-wide font-medium flex-shrink-0 ${priorityColors[index % 3]}`}
                       >
-                        {index % 3 === 0 ? 'High' : index % 3 === 1 ? 'Medium' : 'Low'}
+                        {priorityLabels[index % 3]}
                       </Badge>
                     </div>
                   </div>
-                </div>
-              )) || (
-                <div className="text-center text-muted-foreground py-4">
-                  No key decisions found
-                </div>
-              )}
-            </div>
+                ))}
+              </div>
+            ) : (
+              <p className="text-sm text-muted-foreground py-8 text-center">No key decisions found</p>
+            )}
           </div>
         </TabsContent>
       </Tabs>

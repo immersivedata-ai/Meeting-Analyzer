@@ -27,7 +27,7 @@ class ProductionNLPAnalyzer:
         """Initialize production analyzer."""
         # CRITICAL: Strip whitespace from API key
         self.openai_api_key = settings.OPENAI_API_KEY.strip() if settings.OPENAI_API_KEY else None
-        self.http_client = httpx.AsyncClient(timeout=60.0)
+        self.http_client = httpx.AsyncClient(timeout=300.0)
         
         # Validate API keys
         if not self.openai_api_key:
@@ -61,6 +61,12 @@ class ProductionNLPAnalyzer:
             "response_format": (None, "verbose_json"),
             "timestamp_granularities[]": (None, "segment")
         }
+
+        if settings.TRANSCRIPTION_LANGUAGE:
+            files["language"] = (None, settings.TRANSCRIPTION_LANGUAGE)
+
+        if settings.TRANSCRIPTION_PROMPT:
+            files["prompt"] = (None, settings.TRANSCRIPTION_PROMPT)
         
         try:
             response = await self.http_client.post(

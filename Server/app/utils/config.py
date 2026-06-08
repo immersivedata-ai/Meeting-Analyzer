@@ -31,8 +31,17 @@ class Settings:
         # File handling
         self.MAX_FILE_SIZE = 25 * 1024 * 1024  # 25MB
         self.MAX_AUDIO_DURATION = 600  # 10 minutes
-        self.SUPPORTED_FORMATS = "mp3,wav,mp4,m4a,ogg,flac"
+        self.SUPPORTED_FORMATS = "mp3,wav,mp4,m4a,ogg,flac,webm"
         self.TEMP_DIR = "/tmp/meeting_analysis"
+
+        # Transcription settings
+        self.TRANSCRIPTION_LANGUAGE = os.getenv("TRANSCRIPTION_LANGUAGE", "hi")
+        self.TRANSCRIPTION_PROMPT = os.getenv(
+            "TRANSCRIPTION_PROMPT",
+            "The audio is a Hinglish conversation with Hindi and English words. "
+            "Transcribe Hindi in Devanagari script and English in Latin script. "
+            "Do not transcribe in Urdu script."
+        )
         
         # Logging
         self.LOG_LEVEL = os.getenv("LOG_LEVEL", "INFO")

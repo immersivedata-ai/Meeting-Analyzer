@@ -1,12 +1,12 @@
 import { FormEvent, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
-import { Eye, EyeOff, Loader2, LogIn } from 'lucide-react';
+import { Eye, EyeOff, Loader2, LogIn, Brain } from 'lucide-react';
 import { Button } from '@/components/ui/button';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { useToast } from '@/hooks/use-toast';
 import { useAuth } from '@/contexts/AuthContext';
+import { Header } from '@/components/Header';
 
 const LoginPage = () => {
   const [email, setEmail] = useState('');
@@ -23,10 +23,7 @@ const LoginPage = () => {
 
     try {
       await login(email.trim().toLowerCase(), password);
-      toast({
-        title: 'Signed in',
-        description: 'Welcome back to Manthan AI.',
-      });
+      toast({ title: 'Signed in', description: 'Welcome back.' });
       navigate('/');
     } catch (error) {
       toast({
@@ -40,44 +37,41 @@ const LoginPage = () => {
   };
 
   return (
-    <div className="min-h-[calc(100vh-73px)] px-6 py-12">
-      <div className="mx-auto grid max-w-5xl items-center gap-10 lg:grid-cols-[1fr_440px]">
-        <section className="space-y-6">
-          <div className="inline-flex h-12 w-12 items-center justify-center rounded-lg bg-primary/15 text-primary">
-            <LogIn className="h-6 w-6" />
+    <div className="min-h-screen">
+      <Header />
+      <main className="flex items-center justify-center min-h-[calc(100vh-56px)] px-4">
+        <div className="w-full max-w-sm animate-fade-in-up">
+          <div className="text-center mb-8">
+            <div className="w-10 h-10 rounded-lg gradient-primary flex items-center justify-center mx-auto mb-4">
+              <Brain className="w-5 h-5 text-white" />
+            </div>
+            <h1 className="text-2xl font-bold tracking-tight mb-2">Welcome back</h1>
+            <p className="text-sm text-muted-foreground">Sign in to your Manthan account</p>
           </div>
-          <div>
-            <h1 className="text-4xl font-bold leading-tight md:text-5xl">
-              Login with email
-            </h1>
-            <p className="mt-4 max-w-2xl text-lg text-muted-foreground">
-              Use your email and password to access Manthan AI.
-            </p>
-          </div>
-        </section>
 
-        <Card className="border-glass-border/40 bg-card/80 shadow-xl backdrop-blur">
-          <CardHeader>
-            <CardTitle>Login</CardTitle>
-            <CardDescription>Enter your account details.</CardDescription>
-          </CardHeader>
-          <CardContent>
+          <div className="surface-raised rounded-xl p-6">
             <form className="space-y-5" onSubmit={handleSubmit}>
               <div className="space-y-2">
-                <Label htmlFor="email">Email</Label>
+                <Label htmlFor="email" className="text-sm">Email</Label>
                 <Input
                   id="email"
                   type="email"
                   autoComplete="email"
-                  placeholder="ishan@example.com"
+                  placeholder="you@example.com"
                   value={email}
                   onChange={(event) => setEmail(event.target.value)}
                   required
+                  className="h-10"
                 />
               </div>
 
               <div className="space-y-2">
-                <Label htmlFor="password">Password</Label>
+                <div className="flex items-center justify-between">
+                  <Label htmlFor="password" className="text-sm">Password</Label>
+                  <Link to="/forgot-password" className="text-xs text-muted-foreground hover:text-primary transition-colors">
+                    Forgot?
+                  </Link>
+                </div>
                 <div className="relative">
                   <Input
                     id="password"
@@ -86,42 +80,39 @@ const LoginPage = () => {
                     placeholder="Enter your password"
                     value={password}
                     onChange={(event) => setPassword(event.target.value)}
-                    className="pr-11"
+                    className="pr-11 h-10"
                     required
                   />
-                  <Button
+                  <button
                     type="button"
-                    variant="ghost"
-                    size="icon"
-                    className="absolute right-0 top-0 h-10 w-10"
+                    className="absolute right-0 top-0 h-10 w-10 flex items-center justify-center text-muted-foreground hover:text-foreground transition-colors"
                     onClick={() => setShowPassword((current) => !current)}
                     aria-label={showPassword ? 'Hide password' : 'Show password'}
                   >
                     {showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
-                  </Button>
+                  </button>
                 </div>
               </div>
 
-              <Button type="submit" variant="gradient" size="lg" className="w-full" disabled={isSubmitting}>
-                {isSubmitting ? <Loader2 className="h-4 w-4 animate-spin" /> : <LogIn className="h-4 w-4" />}
-                Login
+              <Button type="submit" className="gradient-primary w-full h-10" disabled={isSubmitting}>
+                {isSubmitting ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : <LogIn className="h-4 w-4 mr-2" />}
+                Sign in
               </Button>
             </form>
 
-            <p className="mt-4 text-center text-sm">
-              <Link to="/forgot-password" className="text-muted-foreground hover:text-primary underline underline-offset-4">
-                Forgot password?
-              </Link>
-            </p>
-
-            <p className="mt-4 text-center text-sm text-muted-foreground">
-              New here?{' '}
+            <p className="mt-5 text-center text-sm text-muted-foreground">
+              No account?{' '}
               <Link to="/signup" className="font-medium text-primary hover:underline">
-                Create an account
+                Create one
               </Link>
             </p>
-          </CardContent>
-        </Card>
+          </div>
+        </div>
+      </main>
+
+      <div className="fixed inset-0 -z-10 overflow-hidden pointer-events-none">
+        <div className="absolute top-0 right-0 w-[600px] h-[600px] rounded-full bg-primary/3 blur-[120px]" />
+        <div className="absolute bottom-0 left-1/4 w-[500px] h-[500px] rounded-full bg-primary/4 blur-[100px]" />
       </div>
     </div>
   );

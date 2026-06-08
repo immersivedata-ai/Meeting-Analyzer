@@ -1,6 +1,6 @@
 import { useState, useCallback } from 'react';
 import { useDropzone } from 'react-dropzone';
-import { Upload, File, AlertTriangle, CheckCircle, Loader2, Zap } from 'lucide-react';
+import { Upload, FileAudio, AlertTriangle, Loader2, Play } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Progress } from '@/components/ui/progress';
 import { Alert, AlertDescription } from '@/components/ui/alert';
@@ -17,17 +17,23 @@ const ACCEPTED_FORMATS = {
 
 const MAX_FILE_SIZE = 25 * 1024 * 1024;
 
+const stepLabels: Record<string, string> = {
+  'Uploading...': 'Uploading your recording',
+  'Transcribing...': 'Generating transcript',
+  'Analyzing...': 'Extracting insights',
+  'Complete!': 'Analysis complete',
+};
+
 export const FileUpload = ({ onFileAnalyzed, isProcessing, setIsProcessing }: FileUploadProps) => {
   const [uploadProgress, setUploadProgress] = useState(0);
   const [processingStep, setProcessingStep] = useState('');
   const [error, setError] = useState<string | null>(null);
-  const [dragActive, setDragActive] = useState(false);
 
   const onDrop = useCallback(async (acceptedFiles: File[]) => {
     setError(null);
     setIsProcessing(true);
     setUploadProgress(0);
-    
+
     const isDemoMode = acceptedFiles.length === 0;
 
     try {
@@ -46,9 +52,9 @@ export const FileUpload = ({ onFileAnalyzed, isProcessing, setIsProcessing }: Fi
       }
 
       setProcessingStep('Analyzing...');
-      
+
       let results;
-      
+
       if (isDemoMode) {
         results = sampleAnalysisResults;
         await new Promise(resolve => setTimeout(resolve, 1500));
@@ -66,7 +72,7 @@ export const FileUpload = ({ onFileAnalyzed, isProcessing, setIsProcessing }: Fi
       }
 
       setProcessingStep('Complete!');
-      
+
       setTimeout(() => {
         onFileAnalyzed(results);
         setIsProcessing(false);
@@ -88,30 +94,31 @@ export const FileUpload = ({ onFileAnalyzed, isProcessing, setIsProcessing }: Fi
     maxSize: MAX_FILE_SIZE,
     multiple: false,
     disabled: isProcessing,
-    onDragEnter: () => setDragActive(true),
-    onDragLeave: () => setDragActive(false),
     onError: (err) => setError(err.message),
   });
 
   if (isProcessing) {
     return (
-      <div className="glass rounded-2xl p-8 text-center animate-scale-in">
-        <div className="space-y-6">
-          <div className="w-16 h-16 mx-auto rounded-full gradient-primary flex items-center justify-center animate-glow-pulse">
-            <Loader2 className="w-8 h-8 text-white animate-spin" />
-          </div>
-          
-          <div className="space-y-3">
-            <h3 className="text-lg font-semibold">{processingStep}</h3>
-            <div className="space-y-2">
-              <Progress value={uploadProgress} className="w-full" />
-              <p className="text-sm text-muted-foreground">{uploadProgress}% complete</p>
-            </div>
+      <div className="surface-raised rounded-xl p-8 md:p-12 text-center animate-scale-in">
+        <div className="space-y-6 max-w-sm mx-auto">
+          <div className="w-14 h-14 mx-auto rounded-full gradient-primary flex items-center justify-center animate-glow-pulse">
+            <Loader2 className="w-7 h-7 text-white animate-spin" />
           </div>
 
-          <div className="text-xs text-muted-foreground">
-            This may take a few moments depending on file size
+          <div className="space-y-2">
+            <p className="text-lg font-semibold">
+              {stepLabels[processingStep] || processingStep}
+            </p>
+            <p className="text-sm text-muted-foreground">
+              {uploadProgress < 100 ? 'This takes about 15–30 seconds' : 'Redirecting to your results...'}
+            </p>
           </div>
+
+          <Progress value={uploadProgress} className="h-1.5" />
+
+          <p className="text-xs text-muted-foreground tabular-nums">
+            {uploadProgress}%
+          </p>
         </div>
       </div>
     );
@@ -122,76 +129,67 @@ export const FileUpload = ({ onFileAnalyzed, isProcessing, setIsProcessing }: Fi
       <div
         {...getRootProps()}
         className={`
-          glass rounded-2xl p-12 text-center cursor-pointer transition-all duration-300
-          ${isDragActive || dragActive ? 'border-primary/50 bg-primary/5 scale-105' : 'border-glass-border/30'}
-          hover:border-primary/30 hover:bg-primary/5 hover:scale-[1.02]
-          animate-fade-in
+          surface-raised rounded-xl p-10 md:p-14 text-center cursor-pointer
+          transition-all duration-300 animate-fade-in
+          ${isDragActive
+            ? 'border-primary/50 bg-primary/[0.04] ring-1 ring-primary/20'
+            : 'hover:border-primary/30 hover:bg-primary/[0.02]'
+          }
         `}
       >
         <input {...getInputProps()} />
-        
-        <div className="space-y-6">
-          <div className="w-20 h-20 mx-auto rounded-full gradient-glow flex items-center justify-center animate-float">
+
+        <div className="space-y-5 max-w-sm mx-auto">
+          <div className="w-14 h-14 mx-auto rounded-full bg-primary/10 flex items-center justify-center">
             {isDragActive ? (
-              <CheckCircle className="w-10 h-10 text-primary" />
+              <FileAudio className="w-7 h-7 text-primary" />
             ) : (
-              <Upload className="w-10 h-10 text-primary" />
+              <Upload className="w-7 h-7 text-primary" />
             )}
           </div>
 
-          <div className="space-y-2">
-            <h3 className="text-xl font-semibold">
-              {isDragActive ? 'Drop your file here' : 'Upload Meeting Recording'}
-            </h3>
-            <p className="text-muted-foreground">
-              Drag & drop your audio or video file, or click to browse
+          <div className="space-y-1.5">
+            <p className="text-lg font-semibold">
+              {isDragActive ? 'Drop to upload' : 'Drop your recording here'}
+            </p>
+            <p className="text-sm text-muted-foreground">
+              MP3, WAV, M4A, or MP4 — up to 25 MB
             </p>
           </div>
 
-          <div className="flex items-center justify-center space-x-2 text-sm text-muted-foreground">
-            <File className="w-4 h-4" />
-            <span>MP3, MP4, WAV, M4A • Max 25MB</span>
-          </div>
-
-          <div className="flex justify-center items-center space-x-6">
-            <Button 
-              variant="outline" 
-              className="glass-strong border-primary/30 hover:bg-primary/10"
+          <div className="flex items-center justify-center gap-3 pt-2">
+            <Button
+              variant="outline"
+              size="default"
             >
-              Choose File
+              Choose file
             </Button>
-            <Button 
-              variant="gradient" 
+            <Button
+              variant="ghost"
+              size="default"
+              className="text-muted-foreground"
               onClick={(e) => {
                 e.stopPropagation();
                 onDrop([]);
               }}
-              className="shadow-glow"
             >
-              <Zap className="w-4 h-4 mr-2" />
-              Try Demo
+              <Play className="w-4 h-4 mr-1.5" />
+              Try with demo data
             </Button>
           </div>
         </div>
       </div>
 
       {error && (
-        <Alert variant="destructive" className="glass border-red-500/30">
+        <Alert variant="destructive" className="surface-raised border-destructive/30 animate-fade-in">
           <AlertTriangle className="h-4 w-4" />
           <AlertDescription>{error}</AlertDescription>
         </Alert>
       )}
 
-      <div className="text-center space-y-2">
-        <p className="text-sm text-muted-foreground">
-          Your files are processed securely and never stored permanently
-        </p>
-        <div className="flex items-center justify-center space-x-4 text-xs text-muted-foreground">
-          <span>✓ End-to-end encrypted</span>
-          <span>✓ Auto-deleted after processing</span>
-          <span>✓ GDPR compliant</span>
-        </div>
-      </div>
+      <p className="text-center text-xs text-muted-foreground">
+        Files are processed transiently — we do not store your recordings.
+      </p>
     </div>
   );
 };

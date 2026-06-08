@@ -8,7 +8,7 @@ from datetime import datetime, timedelta, timezone
 from typing import Optional
 
 from bson import ObjectId
-from fastapi import APIRouter, Cookie, HTTPException, Response
+from fastapi import APIRouter, Cookie, Depends, HTTPException, Response
 from pydantic import BaseModel, Field
 
 from app.database import sessions_collection, users_collection, password_resets_collection
@@ -122,6 +122,16 @@ async def get_user_from_session(session_token: Optional[str]) -> Optional[dict]:
         return None
 
     return await users_collection.find_one({"_id": session["user_id"]})
+
+
+async def get_current_user(
+    manthan_session: Optional[str] = Cookie(default=None),
+) -> dict:
+    """Dependency: require a valid session, return the user document."""
+    user = await get_user_from_session(manthan_session)
+    if not user:
+        raise HTTPException(status_code=401, detail="Not authenticated")
+    return user
 
 
 @router.post("/register", status_code=201)
