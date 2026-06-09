@@ -6,6 +6,7 @@ import { BrowserRouter, Routes, Route } from "react-router-dom";
 import { ThemeProvider } from '@/components/theme-provider';
 import { AuthGuard } from '@/components/auth/AuthGuard';
 import HomePage from "./pages/HomePage";
+import HistoryPage from "./pages/HistoryPage";
 import LoginPage from "./pages/LoginPage";
 import ResultsPage from "./pages/ResultsPage";
 import SignupPage from "./pages/SignupPage";
@@ -26,6 +27,7 @@ const App = () => (
               <main>
                 <Routes>
                   <Route path="/" element={<HomePage />} />
+                  <Route path="/history" element={<HistoryPage />} />
                   <Route path="/login" element={<LoginPage />} />
                   <Route path="/signup" element={<SignupPage />} />
                   <Route path="/forgot-password" element={<ForgotPasswordPage />} />

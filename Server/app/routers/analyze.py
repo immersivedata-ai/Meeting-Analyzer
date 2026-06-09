@@ -32,6 +32,14 @@ logger = logging.getLogger(__name__)
 # Initialize services
 audio_processor = ProductionAudioProcessor()
 
+try:
+    from app.services.speech_diarizer import SpeechDiarizer
+    diarizer = SpeechDiarizer()
+    logger.info("Google Cloud STT diarizer loaded — will use for speaker-accurate transcription")
+except Exception as e:
+    diarizer = None
+    logger.warning(f"SpeechDiarizer not available ({e}) — falling back to Gemini transcription")
+
 
 # --- History response models ---
 
@@ -194,12 +202,23 @@ async def analyze_meeting(
                 f"This will create more chunks and may cause rate limit issues."
             )
 
-        # Analyze using Gemini
-        logger.info(f"[ANALYZE] [{time.time()-start_time:.0f}s elapsed] Starting Gemini analysis...")
-        t_nlp = time.time()
-        async with ProductionNLPAnalyzer() as nlp_analyzer:
-            analysis_result = await nlp_analyzer.analyze_meeting(processed_audio_path)
-        logger.info(f"[ANALYZE] [{time.time()-start_time:.0f}s elapsed] Gemini analysis done in {time.time()-t_nlp:.1f}s")
+        # Analyze — use STT diarizer if available, else fall back to Gemini transcription
+        if diarizer and diarizer.is_ready():
+            logger.info(f"[ANALYZE] [{time.time()-start_time:.0f}s elapsed] Transcribing with Google STT + diarization...")
+            t_stt = time.time()
+            transcript_segments = await diarizer.transcribe(processed_audio_path)
+            logger.info(f"[ANALYZE] STT done in {time.time()-t_stt:.1f}s — {len(transcript_segments)} segments")
+
+            logger.info(f"[ANALYZE] [{time.time()-start_time:.0f}s elapsed] Running Gemini analysis on transcript...")
+            t_nlp = time.time()
+            async with ProductionNLPAnalyzer() as nlp_analyzer:
+                analysis_result = await nlp_analyzer.analyze_transcript_only(transcript_segments)
+        else:
+            logger.info(f"[ANALYZE] [{time.time()-start_time:.0f}s elapsed] Starting Gemini analysis (transcription + analysis)...")
+            t_nlp = time.time()
+            async with ProductionNLPAnalyzer() as nlp_analyzer:
+                analysis_result = await nlp_analyzer.analyze_meeting(processed_audio_path)
+        logger.info(f"[ANALYZE] [{time.time()-start_time:.0f}s elapsed] Analysis done in {time.time()-t_nlp:.1f}s")
         
         # Calculate total processing time
         processing_time = time.time() - start_time
@@ -331,29 +350,100 @@ async def analyze_meeting_stream(
 
             processed_audio_path = await audio_processor.process_audio(temp_filepath, session_id)
 
-            async with ProductionNLPAnalyzer() as nlp_analyzer:
-                async for event in nlp_analyzer.analyze_meeting_streaming(processed_audio_path):
-                    if event["status"] == "complete":
-                        analysis_result = event["result"]
-                        processing_time = round(time.time() - start_time, 2)
-                        analysis_result["processing_time"] = processing_time
+            if diarizer and diarizer.is_ready():
+                yield json.dumps({"status": "progress", "step": "transcribing", "percent": 10, "message": "Transcribing with speaker diarization..."}) + "\n"
+                t_stt = time.time()
+                transcript_segments = await diarizer.transcribe(processed_audio_path)
+                yield json.dumps({"status": "progress", "step": "transcribing", "percent": 70, "message": f"Transcribed {len(transcript_segments)} segments in {time.time()-t_stt:.0f}s"}) + "\n"
 
-                        transcript = analysis_result.get("transcript", [])
-                        word_count = sum(len(seg.get("text", "").split()) for seg in transcript if isinstance(seg, dict))
+                yield json.dumps({"status": "progress", "step": "analyzing", "percent": 75, "message": "Running Gemini analysis..."}) + "\n"
+                async with ProductionNLPAnalyzer() as nlp_analyzer:
+                    analysis_result = await nlp_analyzer.analyze_transcript_only(transcript_segments)
+                yield json.dumps({"status": "progress", "step": "done", "percent": 100, "message": f"Complete in {time.time()-start_time:.0f}s"}) + "\n"
 
-                        response = AnalysisResponse(
-                            session_id=session_id,
-                            filename=file.filename,
-                            **analysis_result,
-                        )
+                processing_time = round(time.time() - start_time, 2)
+                analysis_result["processing_time"] = processing_time
+                transcript = analysis_result.get("transcript", [])
+                word_count = sum(len(seg.get("text", "").split()) for seg in transcript if isinstance(seg, dict))
 
-                        try:
-                            transcript_data = [seg.dict() if hasattr(seg, 'dict') else seg for seg in response.transcript]
-                            action_items_data = [item.dict() if hasattr(item, 'dict') else item for item in response.action_items]
-                            decisions_data = [d.dict() if hasattr(d, 'dict') else d for d in response.key_decisions]
+                response = AnalysisResponse(
+                    session_id=session_id,
+                    filename=file.filename,
+                    **analysis_result,
+                )
 
-                            await analyses_collection.insert_one({
-                                "user_id": user["_id"],
+                try:
+                    transcript_data = [seg.dict() if hasattr(seg, 'dict') else seg for seg in response.transcript]
+                    action_items_data = [item.dict() if hasattr(item, 'dict') else item for item in response.action_items]
+                    decisions_data = [d.dict() if hasattr(d, 'dict') else d for d in response.key_decisions]
+
+                    await analyses_collection.insert_one({
+                        "user_id": user["_id"],
+                        "session_id": session_id,
+                        "filename": file.filename,
+                        "transcript": transcript_data,
+                        "summary": response.summary,
+                        "action_items": action_items_data,
+                        "key_decisions": decisions_data,
+                        "processing_time": processing_time,
+                        "duration": audio_info.get("duration", 0),
+                        "word_count": word_count,
+                        "created_at": datetime.now(timezone.utc),
+                    })
+                except Exception as save_error:
+                    logger.error(f"Failed to save analysis: {save_error}")
+
+                final_payload = {
+                    "status": "complete",
+                    "session_id": session_id,
+                    "filename": file.filename,
+                    "transcript": transcript_data,
+                    "summary": response.summary,
+                    "action_items": action_items_data,
+                    "key_decisions": decisions_data,
+                    "processing_time": processing_time,
+                }
+                yield json.dumps(final_payload, default=str) + "\n"
+            else:
+                async with ProductionNLPAnalyzer() as nlp_analyzer:
+                    async for event in nlp_analyzer.analyze_meeting_streaming(processed_audio_path):
+                        if event["status"] == "complete":
+                            analysis_result = event["result"]
+                            processing_time = round(time.time() - start_time, 2)
+                            analysis_result["processing_time"] = processing_time
+
+                            transcript = analysis_result.get("transcript", [])
+                            word_count = sum(len(seg.get("text", "").split()) for seg in transcript if isinstance(seg, dict))
+
+                            response = AnalysisResponse(
+                                session_id=session_id,
+                                filename=file.filename,
+                                **analysis_result,
+                            )
+
+                            try:
+                                transcript_data = [seg.dict() if hasattr(seg, 'dict') else seg for seg in response.transcript]
+                                action_items_data = [item.dict() if hasattr(item, 'dict') else item for item in response.action_items]
+                                decisions_data = [d.dict() if hasattr(d, 'dict') else d for d in response.key_decisions]
+
+                                await analyses_collection.insert_one({
+                                    "user_id": user["_id"],
+                                    "session_id": session_id,
+                                    "filename": file.filename,
+                                    "transcript": transcript_data,
+                                    "summary": response.summary,
+                                    "action_items": action_items_data,
+                                    "key_decisions": decisions_data,
+                                    "processing_time": analysis_result.get("processing_time", 0),
+                                    "duration": audio_info.get("duration", 0),
+                                    "word_count": word_count,
+                                    "created_at": datetime.now(timezone.utc),
+                                })
+                            except Exception as save_error:
+                                logger.error(f"Failed to save analysis: {save_error}")
+
+                            final_payload = {
+                                "status": "complete",
                                 "session_id": session_id,
                                 "filename": file.filename,
                                 "transcript": transcript_data,
@@ -361,26 +451,10 @@ async def analyze_meeting_stream(
                                 "action_items": action_items_data,
                                 "key_decisions": decisions_data,
                                 "processing_time": analysis_result.get("processing_time", 0),
-                                "duration": audio_info.get("duration", 0),
-                                "word_count": word_count,
-                                "created_at": datetime.now(timezone.utc),
-                            })
-                        except Exception as save_error:
-                            logger.error(f"Failed to save analysis: {save_error}")
-
-                        final_payload = {
-                            "status": "complete",
-                            "session_id": session_id,
-                            "filename": file.filename,
-                            "transcript": transcript_data,
-                            "summary": response.summary,
-                            "action_items": action_items_data,
-                            "key_decisions": decisions_data,
-                            "processing_time": analysis_result.get("processing_time", 0),
-                        }
-                        yield json.dumps(final_payload, default=str) + "\n"
-                    else:
-                        yield json.dumps(event) + "\n"
+                            }
+                            yield json.dumps(final_payload, default=str) + "\n"
+                        else:
+                            yield json.dumps(event) + "\n"
 
         except Exception as e:
             logger.error(f"Stream error: {e}")

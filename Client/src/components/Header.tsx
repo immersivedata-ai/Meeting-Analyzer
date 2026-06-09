@@ -1,7 +1,5 @@
-import { useState, useEffect } from 'react';
-import { useNavigate } from 'react-router-dom';
-import { Brain, Clock } from 'lucide-react';
-import { Button } from '@/components/ui/button';
+import { useNavigate, useLocation } from 'react-router-dom';
+import { Brain, Clock, FileText, BarChart3 } from 'lucide-react';
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -10,7 +8,6 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
 import { Avatar, AvatarFallback } from '@/components/ui/avatar';
-import { checkHealth } from '@/lib/api/health';
 import { useAuth } from '@/contexts/AuthContext';
 
 interface HeaderProps {
@@ -18,29 +15,55 @@ interface HeaderProps {
   isProcessing?: boolean;
 }
 
+const navItems = [
+  { path: '/', label: 'Analyze', icon: Brain },
+  { path: '/history', label: 'History', icon: FileText },
+];
+
 export const Header = ({ processingTime, isProcessing }: HeaderProps) => {
   const navigate = useNavigate();
+  const location = useLocation();
   const { user, isAuthenticated, logout } = useAuth();
-
-  const handleLogoClick = () => {
-    navigate('/');
-  };
 
   return (
     <header className="glass border-b border-border/40 sticky top-0 z-50">
-      <div className="container mx-auto px-6 h-14 flex items-center justify-between">
-        <button
-          onClick={handleLogoClick}
-          className="flex items-center gap-2.5 hover:opacity-80 transition-opacity"
-          aria-label="Go to home page"
-        >
-          <div className="w-8 h-8 rounded-lg gradient-primary flex items-center justify-center">
-            <Brain className="w-4.5 h-4.5 text-white" />
-          </div>
-          <span className="text-lg font-semibold tracking-tight">
-            Manthan
-          </span>
-        </button>
+      <div className="px-6 lg:px-10 xl:px-16 h-14 flex items-center justify-between">
+        <div className="flex items-center gap-8">
+          <button
+            onClick={() => navigate('/')}
+            className="flex items-center gap-2.5 hover:opacity-80 transition-opacity"
+            aria-label="Go to home page"
+          >
+            <div className="w-8 h-8 rounded-lg gradient-primary flex items-center justify-center">
+              <Brain className="w-4.5 h-4.5 text-white" />
+            </div>
+            <span className="text-lg font-semibold tracking-tight">
+              Manthan
+            </span>
+          </button>
+
+          {isAuthenticated && (
+            <nav className="hidden sm:flex items-center gap-1">
+              {navItems.map((item) => {
+                const isActive = location.pathname === item.path;
+                return (
+                  <button
+                    key={item.path}
+                    onClick={() => navigate(item.path)}
+                    className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm transition-colors ${
+                      isActive
+                        ? 'bg-primary/10 text-primary font-medium'
+                        : 'text-muted-foreground hover:text-foreground hover:bg-muted/50'
+                    }`}
+                  >
+                    <item.icon className="w-3.5 h-3.5" />
+                    {item.label}
+                  </button>
+                );
+              })}
+            </nav>
+          )}
+        </div>
 
         <div className="flex items-center gap-4">
           {processingTime !== undefined && (

@@ -177,7 +177,7 @@ export const FileUpload = ({ onFileAnalyzed, isProcessing, setIsProcessing }: Fi
   }
 
   return (
-    <div className="space-y-6">
+    <div>
       <div
         {...getRootProps()}
         className={`
@@ -191,17 +191,17 @@ export const FileUpload = ({ onFileAnalyzed, isProcessing, setIsProcessing }: Fi
       >
         <input {...getInputProps()} />
 
-        <div className="space-y-5 max-w-sm mx-auto">
-          <div className="w-14 h-14 mx-auto rounded-full bg-primary/10 flex items-center justify-center">
+        <div className="space-y-7 mx-auto">
+          <div className="w-20 h-20 mx-auto rounded-full bg-primary/10 flex items-center justify-center">
             {isDragActive ? (
-              <FileAudio className="w-7 h-7 text-primary" />
+              <FileAudio className="w-10 h-10 text-primary" />
             ) : (
-              <Upload className="w-7 h-7 text-primary" />
+              <Upload className="w-10 h-10 text-primary" />
             )}
           </div>
 
-          <div className="space-y-1.5">
-            <p className="text-lg font-semibold">
+          <div className="space-y-2.5">
+            <p className="text-2xl font-semibold">
               {isDragActive ? 'Drop to upload' : 'Drop your recording here'}
             </p>
             <p className="text-sm text-muted-foreground">
@@ -239,7 +239,7 @@ export const FileUpload = ({ onFileAnalyzed, isProcessing, setIsProcessing }: Fi
         </Alert>
       )}
 
-      <p className="text-center text-xs text-muted-foreground">
+      <p className="text-center text-xs text-muted-foreground mt-6">
         Files are processed transiently — we do not store your recordings.
       </p>
     </div>

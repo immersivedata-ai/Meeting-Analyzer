@@ -148,7 +148,7 @@ const ResultsPage = () => {
     <div className="min-h-screen">
       <Header processingTime={results.processing_time} />
 
-      <main className="container mx-auto px-6 py-8">
+      <main className="px-6 lg:px-10 xl:px-16 py-8">
         {/* Page header */}
         <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 mb-8 animate-fade-in">
           <div>

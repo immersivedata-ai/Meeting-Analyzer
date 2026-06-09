@@ -50,6 +50,13 @@ CRITICAL — Speaker Identification Rules (READ CAREFULLY — THIS IS THE MOST I
 - If someone speaks briefly (an interjection, question, or comment), they still get their OWN speaker label — do NOT merge their lines into another speaker.
 - DO NOT alternate labels mechanically. Only switch speakers when the voice actually changes.
 
+CRITICAL — Speaker Naming Rules (DO NOT VIOLATE):
+- NEVER guess or infer a speaker's name. Always use "Speaker 1", "Speaker 2", "Speaker 3" by default.
+- ONLY use an actual name if the speaker EXPLICITLY introduces themselves with phrases like "My name is X", "I am X", "This is X speaking". Hearing someone's name mentioned in conversation is NOT enough — the speaker must identify THEMSELVES.
+- If someone says "Ishan told me..." — the speaker is NOT Ishan. Ishan is a different person being talked about. The speaker remains Speaker N.
+- If someone says "Hi, I'm Rahul" — THEN and ONLY THEN can you label that voice as "Rahul" from that point onward.
+- When in ANY doubt about a name, use Speaker N. It is always better to use Speaker 1/2/3 than to guess a wrong name.
+
 CRITICAL — Script Rules (DO NOT VIOLATE):
 - Hindi words/phrases: ALWAYS write in Devanagari script (हिंदी में लिखें). NEVER transliterate Hindi into Latin/Roman script. "मैं ठीक हूं" is correct; "main theek hoon" is WRONG.
 - English words/phrases: ALWAYS write in Latin/Roman script. NEVER write English words in Devanagari. "meeting" is correct; "मीटिंग" is WRONG.
@@ -131,6 +138,13 @@ CRITICAL — Speaker Identification Rules (READ CAREFULLY — THIS IS THE MOST I
 - If speakers introduce themselves by name anywhere in the audio, use those names instead of Speaker 1/2/3.
 - If someone speaks briefly (an interjection, question, or comment), they still get their OWN speaker label — do NOT merge their lines into another speaker.
 - DO NOT alternate labels mechanically. Only switch speakers when the voice actually changes.
+
+CRITICAL — Speaker Naming Rules (DO NOT VIOLATE):
+- NEVER guess or infer a speaker's name. Always use "Speaker 1", "Speaker 2", "Speaker 3" by default.
+- ONLY use an actual name if the speaker EXPLICITLY introduces themselves with phrases like "My name is X", "I am X", "This is X speaking". Hearing someone's name mentioned in conversation is NOT enough — the speaker must identify THEMSELVES.
+- If someone says "Ishan told me..." — the speaker is NOT Ishan. Ishan is a different person being talked about. The speaker remains Speaker N.
+- If someone says "Hi, I'm Rahul" — THEN and ONLY THEN can you label that voice as "Rahul" from that point onward.
+- When in ANY doubt about a name, use Speaker N. It is always better to use Speaker 1/2/3 than to guess a wrong name.
 
 Other Rules:
 - Provide accurate timestamps for each transcript segment
@@ -287,6 +301,22 @@ class ProductionNLPAnalyzer:
 
         yield {"status": "progress", "step": "done", "percent": 100, "message": f"Complete in {time.time() - t0:.1f}s"}
         yield {"status": "complete", "result": final}
+
+    async def analyze_transcript_only(self, transcript_segments: List[dict]) -> Dict[str, Any]:
+        """
+        Analyze a pre-transcribed transcript (from STT diarizer).
+        Only runs text analysis — no audio processing or transcription.
+        """
+        t0 = time.time()
+        full_text = " ".join(s.get("text", "") for s in transcript_segments)
+        word_count = len(full_text.split())
+        logger.info(f"[ANALYZE-ONLY] {len(transcript_segments)} segments, ~{word_count} words, {len(full_text)} chars")
+
+        analysis_data = await self._analyze_transcript(full_text)
+        analysis_data["transcript"] = transcript_segments
+        final = self._build_analysis_result(analysis_data)
+        logger.info(f"[ANALYZE-ONLY] Done in {time.time() - t0:.1f}s — actions: {len(final['action_items'])}, decisions: {len(final['key_decisions'])}")
+        return final
 
     async def _analyze_meeting_single(self, audio_path: str) -> Dict[str, Any]:
         """
