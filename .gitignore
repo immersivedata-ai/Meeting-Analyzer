@@ -4,3 +4,6 @@ venv
 *.ogg
 .playwright-mcp/
 cookiejar.txt
+__pycache__/
+*.pyc
+.env

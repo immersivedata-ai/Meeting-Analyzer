@@ -7,6 +7,7 @@ import os
 import tempfile
 import asyncio
 import logging
+import time
 
 from pydub import AudioSegment
 from pydub.utils import which
@@ -88,49 +89,69 @@ class ProductionAudioProcessor:
     
     def _process_audio_sync(self, file_path: str, session_id: str) -> str:
         """Synchronous audio processing implementation using pydub."""
-        
-        # Create output directory
+
+        input_size_mb = os.path.getsize(file_path) / (1024 * 1024) if os.path.exists(file_path) else 0
+        logger.info(f"[PYDUB] Input: {file_path} ({input_size_mb:.1f} MB)")
+
         output_dir = tempfile.mkdtemp(prefix="audio_proc_")
         output_path = os.path.join(output_dir, f"{session_id}_processed.mp3")
-        
+
         try:
-            logger.debug("Processing with pydub")
-            
-            # Load audio with pydub
+            t0 = time.time()
+            logger.info("[PYDUB] Step 1/5 — Loading audio file...")
             audio = AudioSegment.from_file(file_path)
-            
-            # Validate audio data
+            logger.info(
+                f"[PYDUB] Step 1/5 — Loaded in {time.time()-t0:.1f}s | "
+                f"duration={len(audio)/1000:.1f}s  channels={audio.channels}  rate={audio.frame_rate}Hz"
+            )
+
             if len(audio) == 0:
-                raise ValueError("Empty audio data")
-            
-            # Convert to mono if stereo
+                raise ValueError("Empty audio data — file may be corrupt")
+
             if audio.channels > 1:
+                logger.info(f"[PYDUB] Step 2/5 — Converting {audio.channels}-ch stereo → mono")
                 audio = audio.set_channels(1)
-            
-            # Set sample rate to 16kHz (optimal for Whisper)
-            audio = audio.set_frame_rate(self.target_sample_rate)
-            
-            # Check duration (log only — Gemini handles long audio natively)
+            else:
+                logger.info("[PYDUB] Step 2/5 — Already mono, skipping conversion")
+
+            if audio.frame_rate != self.target_sample_rate:
+                logger.info(f"[PYDUB] Step 3/5 — Resampling {audio.frame_rate}Hz → {self.target_sample_rate}Hz")
+                audio = audio.set_frame_rate(self.target_sample_rate)
+            else:
+                logger.info(f"[PYDUB] Step 3/5 — Already at {self.target_sample_rate}Hz, skipping resample")
+
             duration = len(audio) / 1000.0
             if duration > self.max_duration:
-                logger.warning(f"Audio duration {duration:.1f}s exceeds recommended {self.max_duration}s — may take longer to process")
+                logger.warning(
+                    f"[PYDUB] Duration {duration:.1f}s exceeds max {self.max_duration}s "
+                    f"— Gemini will handle it but processing may be slow"
+                )
 
-            # Normalize volume
+            logger.info("[PYDUB] Step 4/5 — Normalizing volume...")
             audio = audio.normalize()
 
-            # Export as MP3 (compressed) for efficient upload to Gemini
+            logger.info(f"[PYDUB] Step 5/5 — Exporting to 64k mono MP3: {output_path}")
+            t_export = time.time()
             audio.export(output_path, format="mp3", bitrate="64k")
-            
-            # Verify output file was created
+
             if not os.path.exists(output_path):
-                raise RuntimeError("Failed to create output file")
-            
-            logger.debug(f"Pydub processing successful: {output_path}")
+                raise RuntimeError("Export produced no output file")
+
+            output_size_mb = os.path.getsize(output_path) / (1024 * 1024)
+            logger.info(
+                f"[PYDUB] Export done in {time.time()-t_export:.1f}s | "
+                f"output={output_size_mb:.1f} MB (was {input_size_mb:.1f} MB, "
+                f"ratio={output_size_mb/input_size_mb*100:.0f}%) | "
+                f"total pydub time={time.time()-t0:.1f}s"
+            )
             return output_path
-            
+
         except Exception as e:
-            logger.error(f"Audio processing failed: {e}")
-            # If processing fails, return original file
+            logger.error(f"[PYDUB] FAILED with {type(e).__name__}: {e}")
+            logger.error(
+                f"[PYDUB] FALLBACK — returning original file ({input_size_mb:.1f} MB). "
+                f"This means the NLP analyzer will use the uncompressed file and may create MORE chunks."
+            )
             return file_path
     
     def get_audio_info(self, file_path: str) -> dict:

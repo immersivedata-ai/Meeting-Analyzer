@@ -116,9 +116,12 @@ class ProductionNLPAnalyzer:
             api_key=api_key,
             http_options={"timeout": 600000},  # 10 min timeout for large files
         )
-        self.model_name = "gemini-2.5-flash-native-audio-latest"
+        # gemini-2.5-flash-native-audio-latest is the Live API (WebSocket) model — it does NOT
+        # work with generate_content + Files API and returns 404 on every call.
+        # gemini-2.5-flash supports audio files via Files API and is the correct model here.
+        self.model_name = "gemini-2.5-flash"
         self.text_model_name = "gemini-2.5-flash"
-        logger.info("Production NLP Analyzer initialized (Gemini)")
+        logger.info(f"Production NLP Analyzer initialized — model: {self.model_name}")
 
     async def analyze_meeting(self, audio_path: str) -> Dict[str, Any]:
         """
@@ -126,9 +129,20 @@ class ProductionNLPAnalyzer:
         Files larger than 2 MB are split and transcribed concurrently.
         """
         file_size = os.path.getsize(audio_path) if os.path.exists(audio_path) else 0
+        file_size_mb = file_size / (1024 * 1024)
+        threshold_mb = CHUNK_SIZE_MB
+        logger.info(f"[NLP] Audio file size: {file_size_mb:.1f} MB | threshold: {threshold_mb} MB")
+
         if file_size > CHUNK_SIZE_MB * 1024 * 1024:
-            logger.info(f"File {file_size / 1024 / 1024:.1f} MB exceeds {CHUNK_SIZE_MB} MB — using chunked concurrent transcription")
+            expected_chunks = int(file_size_mb / CHUNK_SIZE_MB) + 1
+            logger.info(
+                f"[NLP] File exceeds {threshold_mb} MB — using CHUNKED mode | "
+                f"expected ~{expected_chunks} chunks of {CHUNK_DURATION_MS/1000:.0f}s each | "
+                f"max {MAX_CONCURRENT_CHUNKS} concurrent"
+            )
             return await self._analyze_meeting_chunked(audio_path)
+
+        logger.info(f"[NLP] File within {threshold_mb} MB limit — using SINGLE-CALL mode")
         return await self._analyze_meeting_single(audio_path)
 
     async def _analyze_meeting_single(self, audio_path: str) -> Dict[str, Any]:
@@ -137,63 +151,70 @@ class ProductionNLPAnalyzer:
         """
         t0 = time.time()
         try:
-            # Step 1: Check file
             file_size = os.path.getsize(audio_path) if os.path.exists(audio_path) else 0
-            logger.info(f"[STEP 1/4] Audio file: {audio_path} ({file_size / 1024 / 1024:.1f} MB)")
             mime_type = self._get_mime_type(audio_path)
-            logger.info(f"[STEP 1/4] MIME type: {mime_type}")
+            logger.info(f"[SINGLE 1/4] File: {audio_path} ({file_size/1024/1024:.1f} MB) | MIME: {mime_type}")
 
-            # Step 2: Upload to Gemini
-            logger.info(f"[STEP 2/4] Uploading to Gemini File API...")
+            logger.info("[SINGLE 2/4] Uploading to Gemini Files API...")
             t1 = time.time()
-            audio_file = await asyncio.to_thread(
-                self.client.files.upload,
-                file=audio_path,
-                config=types.UploadFileConfig(mime_type=mime_type),
-            )
-            logger.info(f"[STEP 2/4] Uploaded in {time.time() - t1:.1f}s — name={audio_file.name}, state={audio_file.state}, uri={getattr(audio_file, 'uri', 'n/a')}")
+            try:
+                audio_file = await asyncio.to_thread(
+                    self.client.files.upload,
+                    file=audio_path,
+                    config=types.UploadFileConfig(mime_type=mime_type),
+                )
+            except Exception as e:
+                logger.error(f"[SINGLE 2/4] UPLOAD FAILED — {type(e).__name__}: {e}")
+                return self._get_demo_analysis(reason=f"Gemini upload failed: {type(e).__name__}: {e}")
+            logger.info(f"[SINGLE 2/4] Uploaded in {time.time()-t1:.1f}s — name={audio_file.name} state={audio_file.state}")
 
-            # Step 2b: Wait for processing
-            logger.info(f"[STEP 2b/4] Waiting for Gemini to process file...")
+            logger.info("[SINGLE 2b/4] Waiting for Gemini to process file...")
             t1 = time.time()
             await self._wait_for_file(audio_file)
-            logger.info(f"[STEP 2b/4] File ready in {time.time() - t1:.1f}s")
+            logger.info(f"[SINGLE 2b/4] File ready in {time.time()-t1:.1f}s")
 
-            # Step 3: Generate analysis
-            logger.info(f"[STEP 3/4] Calling Gemini generate_content (model={self.model_name})...")
-            logger.info(f"[STEP 3/4] Prompt length: {len(ANALYSIS_PROMPT)} chars")
+            logger.info(f"[SINGLE 3/4] Calling generate_content (model={self.model_name})...")
             t1 = time.time()
+            try:
+                response = await asyncio.to_thread(
+                    self.client.models.generate_content,
+                    model=self.model_name,
+                    contents=[ANALYSIS_PROMPT, audio_file],
+                )
+            except Exception as e:
+                err_str = str(e)
+                if "429" in err_str or "RESOURCE_EXHAUSTED" in err_str:
+                    logger.error(f"[SINGLE 3/4] RATE LIMITED (429) — {e}")
+                    return self._get_demo_analysis(reason=f"Gemini rate limit (429): {e}")
+                logger.error(f"[SINGLE 3/4] INFERENCE FAILED — {type(e).__name__}: {e}")
+                logger.error(traceback.format_exc())
+                return self._get_demo_analysis(reason=f"Gemini inference failed: {type(e).__name__}: {e}")
 
-            response = await asyncio.to_thread(
-                self.client.models.generate_content,
-                model=self.model_name,
-                contents=[ANALYSIS_PROMPT, audio_file],
-            )
-
-            elapsed = time.time() - t1
             raw_text = response.text or ""
-            logger.info(f"[STEP 3/4] Gemini response in {elapsed:.1f}s — {len(raw_text)} chars")
-            logger.info(f"[STEP 3/4] First 200 chars: {raw_text[:200]}")
+            logger.info(f"[SINGLE 3/4] Response in {time.time()-t1:.1f}s — {len(raw_text)} chars")
+            logger.info(f"[SINGLE 3/4] Response preview: {raw_text[:300]}")
 
-            # Step 4: Parse and build
-            logger.info(f"[STEP 4/4] Parsing JSON response...")
+            logger.info("[SINGLE 4/4] Parsing JSON response...")
             t1 = time.time()
             result = self._parse_json(raw_text)
-
             if not result:
-                logger.error(f"[STEP 4/4] FAILED to parse JSON. Raw text: {raw_text[:500]}")
-                return self._get_demo_analysis()
+                logger.error(f"[SINGLE 4/4] JSON PARSE FAILED — full raw response ({len(raw_text)} chars):")
+                logger.error(raw_text[:1000])
+                return self._get_demo_analysis(reason=f"JSON parse failed — Gemini returned non-JSON ({len(raw_text)} chars)")
 
-            logger.info(f"[STEP 4/4] JSON parsed in {time.time() - t1:.1f}s — keys: {list(result.keys())}")
+            logger.info(f"[SINGLE 4/4] Parsed in {time.time()-t1:.1f}s — keys: {list(result.keys())}")
             final = self._build_analysis_result(result)
-            logger.info(f"[DONE] Total analysis time: {time.time() - t0:.1f}s — transcript: {len(final['transcript'])} segs, actions: {len(final['action_items'])}, decisions: {len(final['key_decisions'])}")
+            logger.info(
+                f"[SINGLE DONE] Total: {time.time()-t0:.1f}s | "
+                f"transcript={len(final['transcript'])} segs | "
+                f"actions={len(final['action_items'])} | decisions={len(final['key_decisions'])}"
+            )
             return final
 
         except Exception as e:
-            logger.error(f"[FAIL] analyze_meeting failed after {time.time() - t0:.1f}s")
-            logger.error(f"[FAIL] Exception: {type(e).__name__}: {e}")
-            logger.error(f"[FAIL] Traceback:\n{traceback.format_exc()}")
-            return self._get_demo_analysis()
+            logger.error(f"[SINGLE FAIL] Unhandled exception after {time.time()-t0:.1f}s — {type(e).__name__}: {e}")
+            logger.error(traceback.format_exc())
+            return self._get_demo_analysis(reason=f"Unhandled exception: {type(e).__name__}: {e}")
 
     async def _analyze_meeting_chunked(self, audio_path: str) -> Dict[str, Any]:
         """
@@ -204,34 +225,35 @@ class ProductionNLPAnalyzer:
         chunk_paths: List[str] = []
         try:
             file_size = os.path.getsize(audio_path)
-            logger.info(f"[CHUNKED] Splitting {file_size / 1024 / 1024:.1f} MB audio into ~{CHUNK_SIZE_MB} MB chunks...")
+            file_size_mb = file_size / (1024 * 1024)
+            logger.info(f"[CHUNKED] Splitting {file_size_mb:.1f} MB audio into ~{CHUNK_SIZE_MB} MB chunks (each ~{CHUNK_DURATION_MS/1000:.0f}s)...")
 
             chunk_paths = await asyncio.to_thread(self._split_audio, audio_path)
             total_chunks = len(chunk_paths)
-            logger.info(f"[CHUNKED] Split into {total_chunks} chunks (chunk duration: {CHUNK_DURATION_MS / 1000:.0f}s)")
+            logger.info(f"[CHUNKED] Split complete — {total_chunks} chunks created")
+            for i, p in enumerate(chunk_paths):
+                sz = os.path.getsize(p) / (1024 * 1024) if os.path.exists(p) else 0
+                logger.info(f"[CHUNKED]   chunk-{i:02d}: {p} ({sz:.2f} MB)")
 
             semaphore = asyncio.Semaphore(MAX_CONCURRENT_CHUNKS)
             chunk_offset_s = CHUNK_DURATION_MS / 1000.0
 
             async def transcribe_one(idx: int, path: str) -> Optional[list]:
-                try:
-                    async with semaphore:
-                        return await self._transcribe_chunk(path, idx)
-                except Exception as e:
-                    logger.warning(f"[CHUNKED] Chunk {idx} failed: {e}")
-                    return None
+                async with semaphore:
+                    return await self._transcribe_chunk(path, idx)
 
-            logger.info(f"[CHUNKED] Transcribing {total_chunks} chunks concurrently (max {MAX_CONCURRENT_CHUNKS} parallel)...")
+            logger.info(f"[CHUNKED] Launching {total_chunks} transcription tasks (max {MAX_CONCURRENT_CHUNKS} concurrent)...")
             t_transcribe = time.time()
             tasks = [transcribe_one(i, p) for i, p in enumerate(chunk_paths)]
             chunk_results = await asyncio.gather(*tasks)
 
             merged_transcript: List[dict] = []
             failed_chunks = 0
+            failed_indices = []
             for idx, result in enumerate(chunk_results):
                 if result is None:
                     failed_chunks += 1
-                    logger.warning(f"[CHUNKED] Chunk {idx} returned no transcript")
+                    failed_indices.append(idx)
                     continue
                 offset = idx * chunk_offset_s
                 for seg in result:
@@ -239,29 +261,44 @@ class ProductionNLPAnalyzer:
                     seg["end_time"] = round(float(seg.get("end_time", 0)) + offset, 2)
                     merged_transcript.append(seg)
 
-            logger.info(f"[CHUNKED] Transcription done in {time.time() - t_transcribe:.1f}s — {len(merged_transcript)} segments from {total_chunks - failed_chunks}/{total_chunks} chunks")
+            logger.info(
+                f"[CHUNKED] Transcription done in {time.time()-t_transcribe:.1f}s | "
+                f"succeeded={total_chunks-failed_chunks}/{total_chunks} | "
+                f"segments={len(merged_transcript)}"
+            )
+            if failed_chunks > 0:
+                logger.error(
+                    f"[CHUNKED] {failed_chunks} CHUNK(S) FAILED — indices: {failed_indices} | "
+                    f"Likely causes: Gemini rate limit (429), upload timeout, invalid audio segment"
+                )
 
             if not merged_transcript:
-                logger.error("[CHUNKED] No transcript segments — all chunks failed")
-                return self._get_demo_analysis()
+                reason = f"all {total_chunks} chunks failed transcription"
+                logger.error(f"[CHUNKED] CRITICAL: Zero transcript segments — {reason}")
+                return self._get_demo_analysis(reason=reason)
 
             full_text = " ".join(s.get("text", "") for s in merged_transcript)
-            logger.info(f"[CHUNKED] Merged transcript: {len(full_text)} chars")
+            word_count = len(full_text.split())
+            logger.info(f"[CHUNKED] Merged transcript: {len(full_text)} chars, ~{word_count} words")
 
-            logger.info(f"[CHUNKED] Running final analysis on merged transcript...")
+            logger.info(f"[CHUNKED] Running final text analysis (model={self.text_model_name})...")
             t_analysis = time.time()
             analysis_data = await self._analyze_transcript(full_text)
-            logger.info(f"[CHUNKED] Final analysis done in {time.time() - t_analysis:.1f}s")
+            logger.info(f"[CHUNKED] Final analysis done in {time.time()-t_analysis:.1f}s")
 
             analysis_data["transcript"] = merged_transcript
             final = self._build_analysis_result(analysis_data)
-            logger.info(f"[CHUNKED] TOTAL: {time.time() - t0:.1f}s — transcript: {len(final['transcript'])} segs, actions: {len(final['action_items'])}, decisions: {len(final['key_decisions'])}")
+            logger.info(
+                f"[CHUNKED DONE] Total: {time.time()-t0:.1f}s | "
+                f"transcript={len(final['transcript'])} segs | "
+                f"actions={len(final['action_items'])} | decisions={len(final['key_decisions'])}"
+            )
             return final
 
         except Exception as e:
-            logger.error(f"[CHUNKED] Failed after {time.time() - t0:.1f}s: {type(e).__name__}: {e}")
+            logger.error(f"[CHUNKED FAIL] Unhandled exception after {time.time()-t0:.1f}s — {type(e).__name__}: {e}")
             logger.error(traceback.format_exc())
-            return self._get_demo_analysis()
+            return self._get_demo_analysis(reason=f"Unhandled exception in chunked analysis: {type(e).__name__}: {e}")
         finally:
             for p in chunk_paths:
                 try:
@@ -285,45 +322,105 @@ class ProductionNLPAnalyzer:
         return chunk_paths
 
     async def _transcribe_chunk(self, chunk_path: str, chunk_index: int) -> Optional[list]:
+        tag = f"[CHUNK-{chunk_index:02d}]"
+        chunk_size_mb = os.path.getsize(chunk_path) / (1024 * 1024) if os.path.exists(chunk_path) else 0
+        t_total = time.time()
+        logger.info(f"{tag} Starting — {chunk_size_mb:.2f} MB")
+
+        # Step 1: Upload
         mime_type = "audio/mpeg"
         t_up = time.time()
+        try:
+            audio_file = await asyncio.to_thread(
+                self.client.files.upload,
+                file=chunk_path,
+                config=types.UploadFileConfig(mime_type=mime_type),
+            )
+            logger.info(f"{tag} Uploaded in {time.time()-t_up:.1f}s — file={audio_file.name} state={audio_file.state}")
+        except Exception as e:
+            logger.error(f"{tag} UPLOAD FAILED — {type(e).__name__}: {e}")
+            return None
 
-        audio_file = await asyncio.to_thread(
-            self.client.files.upload,
-            file=chunk_path,
-            config=types.UploadFileConfig(mime_type=mime_type),
-        )
-        logger.debug(f"[CHUNK {chunk_index}] Upload in {time.time() - t_up:.1f}s — {audio_file.name}")
+        # Step 2: Wait for Gemini to process the file
+        try:
+            await self._wait_for_file(audio_file, max_wait=60)
+        except Exception as e:
+            logger.error(f"{tag} FILE-WAIT FAILED — {type(e).__name__}: {e}")
+            return None
 
-        await self._wait_for_file(audio_file, max_wait=60)
-
+        # Step 3: Inference with retry on 429
         t_gen = time.time()
-        response = await asyncio.to_thread(
-            self.client.models.generate_content,
-            model=self.model_name,
-            contents=[TRANSCRIPTION_PROMPT, audio_file],
-        )
-        logger.debug(f"[CHUNK {chunk_index}] Gemini response in {time.time() - t_gen:.1f}s")
+        response = None
+        for attempt in range(3):
+            try:
+                response = await asyncio.to_thread(
+                    self.client.models.generate_content,
+                    model=self.model_name,
+                    contents=[TRANSCRIPTION_PROMPT, audio_file],
+                )
+                break
+            except Exception as e:
+                err_str = str(e)
+                is_rate_limit = "429" in err_str or "RESOURCE_EXHAUSTED" in err_str
+                if is_rate_limit and attempt < 2:
+                    wait_s = (2 ** attempt) * 10  # 10s then 20s
+                    logger.warning(f"{tag} Rate limited (429), retrying in {wait_s}s (attempt {attempt+1}/3)")
+                    await asyncio.sleep(wait_s)
+                else:
+                    if is_rate_limit:
+                        logger.error(f"{tag} RATE LIMITED (429) — all 3 attempts exhausted: {e}")
+                        logger.error(f"{tag} FIX: Upgrade to pay-as-you-go Gemini API key (free tier = 10 RPM)")
+                    else:
+                        logger.error(f"{tag} INFERENCE FAILED — {type(e).__name__}: {e}")
+                        logger.error(traceback.format_exc())
+                    return None
 
+        if response is None:
+            logger.error(f"{tag} No response after retries")
+            return None
+
+        logger.info(f"{tag} Inference done in {time.time()-t_gen:.1f}s")
+
+        # Step 4: Parse JSON
         raw_text = response.text or ""
+        if not raw_text:
+            logger.error(f"{tag} Empty response from Gemini")
+            return None
+
         data = self._parse_json(raw_text)
         if not data:
-            logger.warning(f"[CHUNK {chunk_index}] Failed to parse JSON: {raw_text[:200]}")
+            logger.error(f"{tag} JSON PARSE FAILED — raw ({len(raw_text)} chars): {raw_text[:400]}")
             return None
 
         transcript = data.get("transcript", [])
-        logger.info(f"[CHUNK {chunk_index}] {len(transcript)} segments — total: {time.time() - t_up:.1f}s")
+        logger.info(f"{tag} DONE — {len(transcript)} segments in {time.time()-t_total:.1f}s total")
         return transcript
 
     async def _analyze_transcript(self, transcript_text: str) -> Dict[str, Any]:
-        response = await asyncio.to_thread(
-            self.client.models.generate_content,
-            model=self.text_model_name,
-            contents=[ANALYSIS_FROM_TEXT_PROMPT, transcript_text],
-        )
+        word_count = len(transcript_text.split())
+        logger.info(f"[TEXT-ANALYSIS] Sending {len(transcript_text)} chars (~{word_count} words) to {self.text_model_name}")
+        t0 = time.time()
+        try:
+            response = await asyncio.to_thread(
+                self.client.models.generate_content,
+                model=self.text_model_name,
+                contents=[ANALYSIS_FROM_TEXT_PROMPT, transcript_text],
+            )
+        except Exception as e:
+            err_str = str(e)
+            if "429" in err_str or "RESOURCE_EXHAUSTED" in err_str:
+                logger.error(f"[TEXT-ANALYSIS] RATE LIMITED (429): {e}")
+            else:
+                logger.error(f"[TEXT-ANALYSIS] FAILED — {type(e).__name__}: {e}")
+            return {"summary": "Analysis unavailable", "action_items": [], "key_decisions": [], "sentiment": {"overall": "neutral", "tone": "unknown", "score": 0.5}, "topics": []}
+
         raw_text = response.text or ""
+        logger.info(f"[TEXT-ANALYSIS] Response in {time.time()-t0:.1f}s — {len(raw_text)} chars")
         data = self._parse_json(raw_text)
-        return data if data else {"summary": "Analysis unavailable", "action_items": [], "key_decisions": [], "sentiment": {"overall": "neutral", "tone": "unknown", "score": 0.5}, "topics": []}
+        if not data:
+            logger.error(f"[TEXT-ANALYSIS] JSON PARSE FAILED — raw: {raw_text[:400]}")
+            return {"summary": "Analysis unavailable", "action_items": [], "key_decisions": [], "sentiment": {"overall": "neutral", "tone": "unknown", "score": 0.5}, "topics": []}
+        return data
 
     async def _wait_for_file(self, audio_file, max_wait: int = 120):
         """Wait for uploaded file to be processed by Gemini."""
@@ -510,8 +607,13 @@ class ProductionNLPAnalyzer:
             participation_balance=participation_balance,
         )
 
-    def _get_demo_analysis(self) -> Dict[str, Any]:
-        """Return demo analysis when API fails."""
+    def _get_demo_analysis(self, reason: str = "unknown") -> Dict[str, Any]:
+        """Return fallback analysis when the real API pipeline fails."""
+        logger.error("=" * 70)
+        logger.error("[DEMO-FALLBACK] REAL ANALYSIS FAILED — returning hardcoded demo data")
+        logger.error(f"[DEMO-FALLBACK] Reason: {reason}")
+        logger.error("[DEMO-FALLBACK] The user will see fake results unless the caller raises HTTP 500")
+        logger.error("=" * 70)
         transcript_segments = [
             TranscriptSegment(
                 id=str(uuid.uuid4()),
@@ -569,6 +671,8 @@ class ProductionNLPAnalyzer:
             "duration": 15.0,
             "word_count": 40,
             "processing_time": 2.5,
+            "_is_demo_fallback": True,
+            "_fallback_reason": reason,
         }
 
     async def __aenter__(self):

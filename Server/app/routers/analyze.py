@@ -142,13 +142,16 @@ async def analyze_meeting(
         safe_filename = f"{session_id}_{file.filename}"
         temp_filepath = os.path.join(temp_dir, safe_filename)
         
-        # Save uploaded file
-        logger.info(f"Saving uploaded file: {file.filename} ({file.size if hasattr(file, 'size') else 'unknown size'} bytes)")
-        
+        logger.info(f"[ANALYZE] Reading file from request stream...")
+        t_read = time.time()
+        content = await file.read()
+        bytes_read = len(content)
+        logger.info(f"[ANALYZE] Read complete: {bytes_read / 1024 / 1024:.1f} MB ({bytes_read} bytes) in {time.time()-t_read:.1f}s")
+
         with open(temp_filepath, "wb") as temp_file:
-            content = await file.read()
             temp_file.write(content)
-        
+        del content  # free memory immediately
+
         logger.info(f"[ANALYZE] File saved: {temp_filepath} ({os.path.getsize(temp_filepath) / 1024 / 1024:.1f} MB)")
         
         # Validate saved file
@@ -170,26 +173,50 @@ async def analyze_meeting(
             )
         
         # Process audio file
-        logger.info(f"[ANALYZE] Processing audio (pydub compression)...")
+        logger.info(f"[ANALYZE] [{time.time()-start_time:.0f}s elapsed] Starting pydub compression...")
         t_proc = time.time()
-        processed_audio_path = await audio_processor.process_audio(
-            temp_filepath, session_id
+        processed_audio_path = await audio_processor.process_audio(temp_filepath, session_id)
+        processed_size_mb = os.path.getsize(processed_audio_path) / 1024 / 1024
+        logger.info(
+            f"[ANALYZE] [{time.time()-start_time:.0f}s elapsed] Pydub done in {time.time()-t_proc:.1f}s | "
+            f"output: {processed_audio_path} ({processed_size_mb:.1f} MB)"
         )
-        logger.info(f"[ANALYZE] Audio processed in {time.time() - t_proc:.1f}s — output: {processed_audio_path} ({os.path.getsize(processed_audio_path) / 1024 / 1024:.1f} MB)")
-        
-        # Analyze using API services
-        logger.info("Performing analysis with Gemini...")
+        if processed_audio_path == temp_filepath:
+            logger.warning(
+                f"[ANALYZE] Pydub FALLBACK in effect — sending original {processed_size_mb:.1f} MB file to Gemini. "
+                f"This will create more chunks and may cause rate limit issues."
+            )
+
+        # Analyze using Gemini
+        logger.info(f"[ANALYZE] [{time.time()-start_time:.0f}s elapsed] Starting Gemini analysis...")
+        t_nlp = time.time()
         async with ProductionNLPAnalyzer() as nlp_analyzer:
             analysis_result = await nlp_analyzer.analyze_meeting(processed_audio_path)
+        logger.info(f"[ANALYZE] [{time.time()-start_time:.0f}s elapsed] Gemini analysis done in {time.time()-t_nlp:.1f}s")
         
         # Calculate total processing time
         processing_time = time.time() - start_time
         analysis_result["processing_time"] = round(processing_time, 2)
-        
+
+        # Detect demo fallback — real analysis failed, do NOT silently return fake data
+        is_demo = analysis_result.pop("_is_demo_fallback", False)
+        fallback_reason = analysis_result.pop("_fallback_reason", "")
+        if is_demo:
+            logger.error(
+                f"[ANALYZE] ANALYSIS PIPELINE FAILED — demo fallback triggered after {processing_time:.1f}s | "
+                f"reason: {fallback_reason}"
+            )
+            if temp_dir:
+                background_tasks.add_task(cleanup_temp_files, temp_dir)
+            raise HTTPException(
+                status_code=500,
+                detail=f"Analysis failed: {fallback_reason or 'Gemini API error'}. Check server logs for details.",
+            )
+
         # Calculate word count
         transcript = analysis_result.get("transcript", [])
         word_count = sum(len(seg.get("text", "").split()) for seg in transcript if isinstance(seg, dict))
-        
+
         # Build response
         response = AnalysisResponse(
             session_id=session_id,
