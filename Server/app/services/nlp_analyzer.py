@@ -40,7 +40,74 @@ TRANSCRIPTION_PROMPT = """Transcribe this meeting audio segment. Return ONLY val
   ]
 }
 
-CRITICAL — Speaker Identification Rules (READ CAREFULLY — THIS IS THE MOST IMPORTANT PART):
+═══════════════════════════════════
+SCRIPT RULES — READ FIRST. VIOLATING THESE WILL PRODUCE WRONG OUTPUT.
+═══════════════════════════════════
+
+Rule 1: Hindi words → ALWAYS Devanagari (हिंदी)
+Rule 2: English words → ALWAYS Latin (English)
+Rule 3: English loanwords in Hindi sentences → ALWAYS Latin
+
+NEVER write these English words in Devanagari. They are English words spoken within Hindi sentences — keep them in Latin script:
+
+WRONG → CORRECT
+एप्लीकेशन → application
+एप्लीकेशंस → applications
+यूजर → user
+यूजर्स → users
+पेशेंट → patient
+पेशेंट्स → patients
+कन्वर्सेशन → conversation
+कन्वर्सेशंस → conversations
+कंपोनेंट → component
+डेटाबेस → database
+डेवलपमेंट → development
+डिजाइन → design
+इंटीग्रेट → integrate
+इनपुट → input
+आउटपुट → output
+सिस्टम → system
+प्रोजेक्ट → project
+फीचर → feature
+स्टोर → store
+चार्ट → chart/chat
+सर्च → search
+लिस्ट → list
+अकाउंट → account
+परमिशन → permission
+पार्टिसिपेंट → participant
+मेंबर → member
+ग्रुप → group
+प्रॉब्लम → problem
+फ्लॉ → flow
+करेक्ट → correct
+राइट → right
+ओके → okay
+एग्जेक्टली → exactly
+टोटली → totally
+न्यू → new
+पर्सपेक्टिव → perspective
+डिस्कशन → discussion
+क्वेश्चन → question
+डुप्लीकेसी → duplicity
+API → API
+PDF → PDF
+OK → OK
+ID → ID
+हां → haan
+हम्म → hmm
+हा → haa
+अच्छा → achha
+ठीक → theek
+
+Also: NEVER write English words like "the", "is", "a", "an", "of", "in", "on", "to", "for", "and", "or", "but", "with", "from", "this", "that", "what", "when", "where", "how", "why", "who", "which", "has", "have", "had", "will", "would", "can", "could", "should", "may", "might", "must", "shall", "as", "at", "by", "so", "if", "no", "not", "yes", "be", "do", "go", "get", "see", "know", "think", "say", "tell", "ask", "give", "take", "make", "come", "want", "need", "like", "use" in Devanagari. These are ALWAYS Latin.
+
+Example of correct Hinglish transcription:
+Speaker says: "toh user list account ka details right voh sab aapko mil jayega"
+CORRECT: "तो user list account का details right वो सब आपको मिल जाएगा"
+WRONG: "तो यूजर लिस्ट अकाउंट का डिटेल्स राइट वो सब आपको मिल जाएगा"
+
+CRITICAL — Speaker Identification Rules:
 - For EVERY segment, FIRST identify the speaker by their UNIQUE voice characteristics: gender (male/female), pitch (high/medium/deep), age (young/middle-aged/older), accent, speaking speed.
 - If the voice matches a speaker you have ALREADY labeled in this audio, use THAT SAME EXACT label. Do NOT create a new label for the same voice.
 - If the voice is DIFFERENT from every speaker you have labeled so far, ONLY THEN create a new label (Speaker 2, Speaker 3, etc.).
@@ -57,12 +124,7 @@ CRITICAL — Speaker Naming Rules (DO NOT VIOLATE):
 - If someone says "Hi, I'm Rahul" — THEN and ONLY THEN can you label that voice as "Rahul" from that point onward.
 - When in ANY doubt about a name, use Speaker N. It is always better to use Speaker 1/2/3 than to guess a wrong name.
 
-CRITICAL — Script Rules (DO NOT VIOLATE):
-- Hindi words/phrases: ALWAYS write in Devanagari script (हिंदी में लिखें). NEVER transliterate Hindi into Latin/Roman script. "मैं ठीक हूं" is correct; "main theek hoon" is WRONG.
-- English words/phrases: ALWAYS write in Latin/Roman script. NEVER write English words in Devanagari. "meeting" is correct; "मीटिंग" is WRONG.
-- For Hinglish (mixed): transcribe exactly as spoken — Hindi parts in Devanagari, English parts in Latin. Example: "मैं meeting में जा रहा हूं" not "main meeting mein ja raha hoon"
-- Proper nouns (names, brands, places): preserve exact pronunciation in Latin script. NEVER anglicize or change spelling.
-- English loanwords commonly used in Hindi (like "meeting", "phone", "team"): write them in Latin script within the Hindi sentence. Do not transliterate them to Devanagari.
+REMEMBER: Follow the SCRIPT RULES at the top. Hindi in Devanagari, English words in Latin, English loanwords in Latin.
 
 Return ONLY the JSON object, nothing else"""
 
@@ -84,26 +146,33 @@ Transcript:
 ANALYSIS_FROM_TEXT_PROMPT = """You are a meeting analyst. Given this complete meeting transcript, return ONLY valid JSON — no markdown, no code fences, no extra text.
 
 {
-  "summary": "Concise 2-3 sentence meeting summary in the same language as the meeting",
+  "summary": "Concise 2-3 sentence meeting summary — MUST BE IN ENGLISH",
   "action_items": [
-    {"text": "action description", "assignee": "person name or null", "deadline": "deadline or null", "priority": "high|medium|low"}
+    {"text": "action description — MUST BE IN ENGLISH", "assignee": "person name or null", "deadline": "deadline or null", "priority": "high|medium|low"}
   ],
   "key_decisions": [
-    {"decision": "decision description", "rationale": "why this was decided", "impact": "expected impact"}
+    {"decision": "decision description — MUST BE IN ENGLISH", "rationale": "why this was decided — MUST BE IN ENGLISH", "impact": "expected impact"}
   ],
-  "sentiment": {"overall": "positive|negative|neutral", "tone": "brief tone description", "score": 0.7},
-  "topics": ["topic1", "topic2"]
+  "sentiment": {"overall": "positive|negative|neutral", "tone": "brief tone description — MUST BE IN ENGLISH", "score": 0.7},
+  "topics": ["topic in English", "topic in English"]
 }
 
-CRITICAL — Script Rules (DO NOT VIOLATE):
-- Hindi words/phrases: ALWAYS write in Devanagari script (हिंदी में लिखें). NEVER transliterate Hindi into Latin/Roman script.
-- English words/phrases: ALWAYS write in Latin/Roman script. NEVER write English words in Devanagari.
-- Proper nouns: preserve original spelling. NEVER anglicize or change. "Iqwat Foundation" stays "Iqwat Foundation".
-- Extract ALL action items and key decisions — do not miss any
-- If the meeting is in Hindi or Hinglish, analyze in that language
-- Return ONLY the JSON object, nothing else"""
+MOST IMPORTANT RULE — READ FIRST:
+EVERY field in the JSON output (summary, action_items, key_decisions, sentiment, topics) MUST be written in ENGLISH. This is non-negotiable. Even if the transcript contains Hindi or Hinglish, the analysis output must be 100% English. DO NOT output Hindi, Devanagari, or Hinglish in the analysis fields. DO NOT translate action items or decisions into Hindi. ALL analysis text must be in English.
+
+Example of WRONG output: "कार्य सूची" or "निर्णय"
+Example of CORRECT output: "Action items" or "Decisions"
+
+Extract ALL action items and key decisions — do not miss any.
+Return ONLY the JSON object, nothing else"""
 
 ANALYSIS_PROMPT = """You are a meeting analyst. Analyze this meeting audio recording and return ONLY valid JSON — no markdown, no code fences, no extra text.
+
+MOST IMPORTANT RULE — READ FIRST:
+The fields summary, action_items, key_decisions, sentiment, and topics MUST be written in ENGLISH. Even if the meeting is in Hindi or Hinglish, the analysis output must be 100% English. DO NOT output Hindi or Devanagari in these fields. Only the "text" field inside transcript segments may contain Hindi/Devanagari (transcribe as spoken). All analysis fields must be English.
+
+Example WRONG: "summary": "मीटिंग में प्रोजेक्ट की समीक्षा की गई"
+Example CORRECT: "summary": "The meeting covered the project review and next steps."
 
 Return exactly this structure:
 
@@ -111,23 +180,33 @@ Return exactly this structure:
   "transcript": [
     {"speaker": "Speaker name", "text": "what they said", "start_time": seconds, "end_time": seconds, "confidence": 0.95}
   ],
-  "summary": "Concise 2-3 sentence meeting summary in the same language as the meeting",
+  "summary": "Concise 2-3 sentence meeting summary — MUST BE IN ENGLISH",
   "action_items": [
-    {"text": "action description", "assignee": "person name or null", "deadline": "deadline or null", "priority": "high|medium|low"}
+    {"text": "action description — MUST BE IN ENGLISH", "assignee": "person name or null", "deadline": "deadline or null", "priority": "high|medium|low"}
   ],
   "key_decisions": [
-    {"decision": "decision description", "rationale": "why this was decided", "impact": "expected impact"}
+    {"decision": "decision description — MUST BE IN ENGLISH", "rationale": "why this was decided — MUST BE IN ENGLISH", "impact": "expected impact"}
   ],
-  "sentiment": {"overall": "positive|negative|neutral", "tone": "brief tone description", "score": 0.7},
-  "topics": ["topic1", "topic2"]
+  "sentiment": {"overall": "positive|negative|neutral", "tone": "brief tone description — MUST BE IN ENGLISH", "score": 0.7},
+  "topics": ["topic in English", "topic in English"]
 }
 
-CRITICAL — Script Rules (DO NOT VIOLATE):
-- Hindi words/phrases: ALWAYS write in Devanagari script (हिंदी में लिखें). NEVER transliterate Hindi into Latin/Roman script. "मैं ठीक हूं" is correct; "main theek hoon" is WRONG.
-- English words/phrases: ALWAYS write in Latin/Roman script. NEVER write English words in Devanagari. "meeting" is correct; "मीटिंग" is WRONG.
-- For Hinglish (mixed): transcribe exactly as spoken — Hindi parts in Devanagari, English parts in Latin. Example: "मैं meeting में जा रहा हूं" not "main meeting mein ja raha hoon"
-- Proper nouns (names, brands, places): preserve exact pronunciation in Latin script. NEVER anglicize or change spelling. "Iqwat Foundation" stays "Iqwat Foundation" — do NOT change to "Eqwat" or "Iqwat".
-- English loanwords commonly used in Hindi (like "meeting", "phone", "team"): write them in Latin script within the Hindi sentence. Do not transliterate them to Devanagari.
+CRITICAL — Output Language:
+- Summary, action items, key decisions, sentiment, and topics MUST be written in English only — regardless of the meeting language. Even if the meeting is in Hindi or Hinglish, the analysis output must be in English.
+
+═══════════════════════════════════
+TRANSCRIPT SCRIPT RULES — DO NOT WRITE ENGLISH WORDS IN DEVANAGARI
+═══════════════════════════════════
+
+For the transcript text field ONLY:
+- Hindi words → Devanagari (हिंदी)
+- English words → Latin script. NEVER transliterate English words into Devanagari.
+- English loanwords in Hindi sentences → Latin script.
+
+NEVER write these in Devanagari: user (यूजर), patient (पेशेंट), application (एप्लीकेशन), conversation (कन्वर्सेशन), component (कंपोनेंट), database (डेटाबेस), development (डेवलपमेंट), design (डिजाइन), project (प्रोजेक्ट), feature (फीचर), system (सिस्टम), store (स्टोर), search (सर्च), list (लिस्ट), account (अकाउंट), permission (परमिशन), member (मेंबर), group (ग्रुप), problem (प्रॉब्लम), correct (करेक्ट), right (राइट), okay (ओके), exactly (एग्जेक्टली), totally (टोटली), new (न्यू), question (क्वेश्चन), hmm (हम्म), haan (हां), haa (हा), achha (अच्छा), theek (ठीक), API, PDF, OK, ID
+
+Correct Hinglish: "तो user list account का details right वो सब आपको मिल जाएगा"
+Wrong Hinglish: "तो यूजर लिस्ट अकाउंट का डिटेल्स राइट वो सब आपको मिल जाएगा"
 
 CRITICAL — Speaker Identification Rules (READ CAREFULLY — THIS IS THE MOST IMPORTANT PART):
 - For EVERY segment, FIRST identify the speaker by their UNIQUE voice characteristics: gender (male/female), pitch (high/medium/deep), age (young/middle-aged/older), accent, speaking speed.
@@ -376,6 +455,20 @@ class ProductionNLPAnalyzer:
                 return self._get_demo_analysis(reason=f"JSON parse failed — Gemini returned non-JSON ({len(raw_text)} chars)")
 
             logger.info(f"[SINGLE 4/4] Parsed in {time.time()-t1:.1f}s — keys: {list(result.keys())}")
+
+            if self._contains_devanagari(result.get("summary", "")):
+                logger.info("[SINGLE] Detected Hindi in summary — translating to English...")
+                result["summary"] = await self.translate_text(result["summary"], "en")
+            for i, item in enumerate(result.get("action_items", [])):
+                if isinstance(item, dict) and self._contains_devanagari(item.get("text", "")):
+                    result["action_items"][i]["text"] = await self.translate_text(item["text"], "en")
+            for i, d in enumerate(result.get("key_decisions", [])):
+                if isinstance(d, dict):
+                    if self._contains_devanagari(d.get("decision", "")):
+                        result["key_decisions"][i]["decision"] = await self.translate_text(d["decision"], "en")
+                    if self._contains_devanagari(d.get("rationale", "")):
+                        result["key_decisions"][i]["rationale"] = await self.translate_text(d["rationale"], "en")
+
             final = self._build_analysis_result(result)
             logger.info(
                 f"[SINGLE DONE] Total: {time.time()-t0:.1f}s | "
@@ -627,10 +720,39 @@ class ProductionNLPAnalyzer:
         raw_text = response.text or ""
         logger.info(f"[TEXT-ANALYSIS] Response in {time.time()-t0:.1f}s — {len(raw_text)} chars")
         data = self._parse_json(raw_text)
+
         if not data:
-            logger.error(f"[TEXT-ANALYSIS] JSON PARSE FAILED — raw: {raw_text[:400]}")
+            logger.error(f"[TEXT-ANALYSIS] JSON PARSE FAILED — raw ({len(raw_text)} chars): {raw_text[:500]}")
             return {"summary": "Analysis unavailable", "action_items": [], "key_decisions": [], "sentiment": {"overall": "neutral", "tone": "unknown", "score": 0.5}, "topics": []}
+
+        if self._contains_devanagari(data.get("summary", "")):
+            logger.info("[TEXT-ANALYSIS] Detected Hindi in summary — translating to English...")
+            data["summary"] = await self.translate_text(data["summary"], "en")
+
+        items = data.get("action_items", [])
+        for i, item in enumerate(items):
+            if isinstance(item, dict) and self._contains_devanagari(item.get("text", "")):
+                items[i]["text"] = await self.translate_text(item["text"], "en")
+
+        decisions = data.get("key_decisions", [])
+        for i, d in enumerate(decisions):
+            if isinstance(d, dict):
+                if self._contains_devanagari(d.get("decision", "")):
+                    decisions[i]["decision"] = await self.translate_text(d["decision"], "en")
+                if self._contains_devanagari(d.get("rationale", "")):
+                    decisions[i]["rationale"] = await self.translate_text(d["rationale"], "en")
+
+        tone = data.get("sentiment", {}).get("tone", "")
+        if isinstance(tone, str) and self._contains_devanagari(tone):
+            data["sentiment"]["tone"] = await self.translate_text(tone, "en")
+
         return data
+
+    @staticmethod
+    def _contains_devanagari(text: str) -> bool:
+        if not text:
+            return False
+        return any('\u0900' <= c <= '\u097f' for c in text)
 
     async def _wait_for_file(self, audio_file, max_wait: int = 120):
         """Wait for uploaded file to be processed by Gemini."""
