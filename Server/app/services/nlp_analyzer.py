@@ -12,7 +12,7 @@ import os
 import tempfile
 import time
 import traceback
-from typing import List, Dict, Any, Optional
+from typing import List, Dict, Any, Optional, AsyncGenerator
 
 from google import genai
 from google.genai import types
@@ -40,14 +40,39 @@ TRANSCRIPTION_PROMPT = """Transcribe this meeting audio segment. Return ONLY val
   ]
 }
 
-CRITICAL — Speaker Identification Rules:
-- Listen carefully to voice differences (pitch, tone, accent, gender, speaking style) to distinguish EVERY unique speaker
-- If there are 3 speakers, label them as Speaker 1, Speaker 2, Speaker 3 — do NOT merge different voices into the same label
-- If speakers introduce themselves by name, use those names instead of Speaker 1/2/3
-- Each speaker must be consistently labeled throughout
-- If someone speaks briefly (an interjection, question, or comment), they still get their own speaker label
-- If the meeting is in Hindi or Hinglish, transcribe in that language
-- Return ONLY the JSON object, nothing else"""
+CRITICAL — Speaker Identification Rules (READ CAREFULLY — THIS IS THE MOST IMPORTANT PART):
+- For EVERY segment, FIRST identify the speaker by their UNIQUE voice characteristics: gender (male/female), pitch (high/medium/deep), age (young/middle-aged/older), accent, speaking speed.
+- If the voice matches a speaker you have ALREADY labeled in this audio, use THAT SAME EXACT label. Do NOT create a new label for the same voice.
+- If the voice is DIFFERENT from every speaker you have labeled so far, ONLY THEN create a new label (Speaker 2, Speaker 3, etc.).
+- BEFORE labeling any segment as an existing speaker, CONFIRM it is the SAME voice. If the voice sounds different, it IS a different speaker — label them as a new speaker.
+- Count how many unique voices are in the audio. The number of unique speaker labels MUST equal the number of unique voices.
+- If speakers introduce themselves by name anywhere in the audio, use those names instead of Speaker 1/2/3.
+- If someone speaks briefly (an interjection, question, or comment), they still get their OWN speaker label — do NOT merge their lines into another speaker.
+- DO NOT alternate labels mechanically. Only switch speakers when the voice actually changes.
+
+CRITICAL — Script Rules (DO NOT VIOLATE):
+- Hindi words/phrases: ALWAYS write in Devanagari script (हिंदी में लिखें). NEVER transliterate Hindi into Latin/Roman script. "मैं ठीक हूं" is correct; "main theek hoon" is WRONG.
+- English words/phrases: ALWAYS write in Latin/Roman script. NEVER write English words in Devanagari. "meeting" is correct; "मीटिंग" is WRONG.
+- For Hinglish (mixed): transcribe exactly as spoken — Hindi parts in Devanagari, English parts in Latin. Example: "मैं meeting में जा रहा हूं" not "main meeting mein ja raha hoon"
+- Proper nouns (names, brands, places): preserve exact pronunciation in Latin script. NEVER anglicize or change spelling.
+- English loanwords commonly used in Hindi (like "meeting", "phone", "team"): write them in Latin script within the Hindi sentence. Do not transliterate them to Devanagari.
+
+Return ONLY the JSON object, nothing else"""
+
+SPEAKER_NORMALIZATION_PROMPT = """You are a transcript editor. Below is a meeting transcript where multiple chunks were transcribed independently, causing inconsistent speaker labels. The SAME person may be labeled as "Speaker 1" in one chunk and "Speaker 2" in another.
+
+Your task: Normalize all speaker labels so the same physical person has the exact same label throughout.
+
+Rules:
+- Analyze speaking style, vocabulary, tone, and conversational flow to determine which labels refer to the same person
+- If Speaker A in early segments and Speaker B in later segments are the SAME person, merge them under ONE label
+- Do NOT merge genuinely different speakers
+- If any speaker introduced themselves by name, use that name
+- Return the SAME JSON array but with corrected speaker fields
+- Return ONLY valid JSON — no markdown, no code fences, no extra text
+
+Transcript:
+{transcript_json}"""
 
 ANALYSIS_FROM_TEXT_PROMPT = """You are a meeting analyst. Given this complete meeting transcript, return ONLY valid JSON — no markdown, no code fences, no extra text.
 
@@ -63,7 +88,10 @@ ANALYSIS_FROM_TEXT_PROMPT = """You are a meeting analyst. Given this complete me
   "topics": ["topic1", "topic2"]
 }
 
-CRITICAL:
+CRITICAL — Script Rules (DO NOT VIOLATE):
+- Hindi words/phrases: ALWAYS write in Devanagari script (हिंदी में लिखें). NEVER transliterate Hindi into Latin/Roman script.
+- English words/phrases: ALWAYS write in Latin/Roman script. NEVER write English words in Devanagari.
+- Proper nouns: preserve original spelling. NEVER anglicize or change. "Iqwat Foundation" stays "Iqwat Foundation".
 - Extract ALL action items and key decisions — do not miss any
 - If the meeting is in Hindi or Hinglish, analyze in that language
 - Return ONLY the JSON object, nothing else"""
@@ -87,18 +115,26 @@ Return exactly this structure:
   "topics": ["topic1", "topic2"]
 }
 
-CRITICAL — Speaker Identification Rules:
-- Listen carefully to voice differences (pitch, tone, accent, gender, speaking style) to distinguish EVERY unique speaker
-- If there are 3 speakers, label them as Speaker 1, Speaker 2, Speaker 3 — do NOT merge different voices into the same label
-- If speakers introduce themselves by name, use those names instead of Speaker 1/2/3
-- Each speaker must be consistently labeled throughout the entire transcript
-- Do NOT alternate between just 2 speakers if the audio has 3 or more distinct voices
-- If someone speaks briefly (an interjection, question, or comment), they still get their own speaker label
+CRITICAL — Script Rules (DO NOT VIOLATE):
+- Hindi words/phrases: ALWAYS write in Devanagari script (हिंदी में लिखें). NEVER transliterate Hindi into Latin/Roman script. "मैं ठीक हूं" is correct; "main theek hoon" is WRONG.
+- English words/phrases: ALWAYS write in Latin/Roman script. NEVER write English words in Devanagari. "meeting" is correct; "मीटिंग" is WRONG.
+- For Hinglish (mixed): transcribe exactly as spoken — Hindi parts in Devanagari, English parts in Latin. Example: "मैं meeting में जा रहा हूं" not "main meeting mein ja raha hoon"
+- Proper nouns (names, brands, places): preserve exact pronunciation in Latin script. NEVER anglicize or change spelling. "Iqwat Foundation" stays "Iqwat Foundation" — do NOT change to "Eqwat" or "Iqwat".
+- English loanwords commonly used in Hindi (like "meeting", "phone", "team"): write them in Latin script within the Hindi sentence. Do not transliterate them to Devanagari.
+
+CRITICAL — Speaker Identification Rules (READ CAREFULLY — THIS IS THE MOST IMPORTANT PART):
+- For EVERY segment, FIRST identify the speaker by their UNIQUE voice characteristics: gender (male/female), pitch (high/medium/deep), age (young/middle-aged/older), accent, speaking speed.
+- If the voice matches a speaker you have ALREADY labeled in this audio, use THAT SAME EXACT label. Do NOT create a new label for the same voice.
+- If the voice is DIFFERENT from every speaker you have labeled so far, ONLY THEN create a new label (Speaker 2, Speaker 3, etc.).
+- BEFORE labeling any segment as an existing speaker, CONFIRM it is the SAME voice. If the voice sounds different, it IS a different speaker — label them as a new speaker.
+- Count how many unique voices are in the audio. The number of unique speaker labels MUST equal the number of unique voices.
+- If speakers introduce themselves by name anywhere in the audio, use those names instead of Speaker 1/2/3.
+- If someone speaks briefly (an interjection, question, or comment), they still get their OWN speaker label — do NOT merge their lines into another speaker.
+- DO NOT alternate labels mechanically. Only switch speakers when the voice actually changes.
 
 Other Rules:
 - Provide accurate timestamps for each transcript segment
 - Extract ALL action items and key decisions — do not miss any
-- If the meeting is in Hindi or Hinglish, transcribe and analyze in that language
 - Return ONLY the JSON object, nothing else"""
 
 
@@ -123,6 +159,20 @@ class ProductionNLPAnalyzer:
         self.text_model_name = "gemini-2.5-flash"
         logger.info(f"Production NLP Analyzer initialized — model: {self.model_name}")
 
+    async def translate_text(self, text: str, target_lang: str) -> str:
+        """Translate text to Hindi or English using Gemini."""
+        if target_lang == "hi":
+            prompt = f'Translate the following text to Hindi (Devanagari script). Return ONLY the translated text, no explanations: {text}'
+        else:
+            prompt = f'Translate the following text to English. Return ONLY the translated text, no explanations: {text}'
+
+        response = await asyncio.to_thread(
+            self.client.models.generate_content,
+            model=self.text_model_name,
+            contents=[prompt],
+        )
+        return (response.text or text).strip()
+
     async def analyze_meeting(self, audio_path: str) -> Dict[str, Any]:
         """
         Perform complete meeting analysis using Gemini API.
@@ -144,6 +194,99 @@ class ProductionNLPAnalyzer:
 
         logger.info(f"[NLP] File within {threshold_mb} MB limit — using SINGLE-CALL mode")
         return await self._analyze_meeting_single(audio_path)
+
+    async def analyze_meeting_streaming(self, audio_path: str) -> AsyncGenerator[Dict[str, Any], None]:
+        """
+        Stream analysis progress as NDJSON events, ending with a {"status":"complete","result":...} event.
+        """
+        t0 = time.time()
+        file_size = os.path.getsize(audio_path)
+
+        yield {"status": "progress", "step": "uploading", "percent": 5, "message": "File received"}
+
+        if file_size <= CHUNK_SIZE_MB * 1024 * 1024:
+            yield {"status": "progress", "step": "transcribing", "percent": 15, "message": "Transcribing with Gemini..."}
+            result = await self._analyze_meeting_single(audio_path)
+            yield {"status": "progress", "step": "done", "percent": 100, "message": f"Complete in {time.time() - t0:.1f}s"}
+            yield {"status": "complete", "result": result}
+            return
+
+        file_size_mb = file_size / (1024 * 1024)
+        yield {"status": "progress", "step": "splitting", "percent": 7, "message": f"Splitting {file_size_mb:.1f} MB into ~2 MB chunks..."}
+
+        chunk_paths = await asyncio.to_thread(self._split_audio, audio_path)
+        total_chunks = len(chunk_paths)
+        yield {"status": "progress", "step": "splitting", "percent": 10, "message": f"Split into {total_chunks} chunks"}
+
+        progress_q: asyncio.Queue = asyncio.Queue()
+        results_ref: list = [None] * total_chunks
+        semaphore = asyncio.Semaphore(MAX_CONCURRENT_CHUNKS)
+
+        async def transcribe_with_progress(idx: int, path: str):
+            try:
+                async with semaphore:
+                    result = await self._transcribe_chunk(path, idx)
+                results_ref[idx] = result
+                cnt = sum(1 for r in results_ref if r is not None)
+                await progress_q.put({"type": "chunk_done", "idx": idx, "count": cnt})
+            except Exception as e:
+                logger.warning(f"[STREAM] Chunk {idx} raised: {e}")
+                results_ref[idx] = None
+                cnt = sum(1 for r in results_ref if r is not None)
+                await progress_q.put({"type": "chunk_done", "idx": idx, "count": cnt})
+
+        bg_task = asyncio.ensure_future(
+            asyncio.gather(*[transcribe_with_progress(i, p) for i, p in enumerate(chunk_paths)])
+        )
+
+        completed_count = 0
+        while True:
+            event = await progress_q.get()
+            count = event["count"]
+            if count > completed_count:
+                completed_count = count
+                pct = 10 + int(60 * completed_count / total_chunks)
+                yield {"status": "progress", "step": "transcribing", "percent": pct, "message": f"Transcribing chunk {completed_count}/{total_chunks}..."}
+            if completed_count >= total_chunks:
+                break
+
+        await bg_task
+
+        chunk_offset_s = CHUNK_DURATION_MS / 1000.0
+        merged_transcript: List[dict] = []
+        for idx, result in enumerate(results_ref):
+            if result is None:
+                continue
+            offset = idx * chunk_offset_s
+            for seg in result:
+                seg["start_time"] = round(float(seg.get("start_time", 0)) + offset, 2)
+                seg["end_time"] = round(float(seg.get("end_time", 0)) + offset, 2)
+                merged_transcript.append(seg)
+
+        if not merged_transcript:
+            logger.error("[STREAM] Zero transcript segments — all chunks failed")
+            result = self._get_demo_analysis(reason="All chunks failed")
+            yield {"status": "complete", "result": result}
+            return
+
+        full_text = " ".join(s.get("text", "") for s in merged_transcript)
+        yield {"status": "progress", "step": "normalizing", "percent": 75, "message": "Normalizing speaker labels..."}
+        merged_transcript = await self._normalize_speakers(merged_transcript)
+        full_text = " ".join(s.get("text", "") for s in merged_transcript)
+        yield {"status": "progress", "step": "analyzing", "percent": 80, "message": "Running final analysis..."}
+
+        analysis_data = await self._analyze_transcript(full_text)
+        analysis_data["transcript"] = merged_transcript
+        final = self._build_analysis_result(analysis_data)
+
+        for p in chunk_paths:
+            try:
+                os.remove(p)
+            except Exception:
+                pass
+
+        yield {"status": "progress", "step": "done", "percent": 100, "message": f"Complete in {time.time() - t0:.1f}s"}
+        yield {"status": "complete", "result": final}
 
     async def _analyze_meeting_single(self, audio_path: str) -> Dict[str, Any]:
         """
@@ -281,6 +424,10 @@ class ProductionNLPAnalyzer:
             word_count = len(full_text.split())
             logger.info(f"[CHUNKED] Merged transcript: {len(full_text)} chars, ~{word_count} words")
 
+            logger.info(f"[CHUNKED] Normalizing speaker labels across chunks...")
+            merged_transcript = await self._normalize_speakers(merged_transcript)
+            full_text = " ".join(s.get("text", "") for s in merged_transcript)
+
             logger.info(f"[CHUNKED] Running final text analysis (model={self.text_model_name})...")
             t_analysis = time.time()
             analysis_data = await self._analyze_transcript(full_text)
@@ -394,6 +541,39 @@ class ProductionNLPAnalyzer:
 
         transcript = data.get("transcript", [])
         logger.info(f"{tag} DONE — {len(transcript)} segments in {time.time()-t_total:.1f}s total")
+        return transcript
+
+    async def _normalize_speakers(self, transcript: List[dict]) -> List[dict]:
+        """Normalize inconsistent speaker labels across chunks using Gemini."""
+        if len(transcript) < 2:
+            return transcript
+
+        transcript_json = json.dumps(transcript, ensure_ascii=False)
+        prompt = SPEAKER_NORMALIZATION_PROMPT.format(transcript_json=transcript_json)
+
+        logger.info(f"[NORMALIZE] Sending {len(transcript)} segments for speaker normalization...")
+        t0 = time.time()
+        try:
+            response = await asyncio.to_thread(
+                self.client.models.generate_content,
+                model=self.text_model_name,
+                contents=[prompt],
+            )
+        except Exception as e:
+            logger.warning(f"[NORMALIZE] Failed — {type(e).__name__}: {e}, keeping original labels")
+            return transcript
+
+        raw_text = response.text or ""
+        normalized = self._parse_json(raw_text)
+        if normalized and isinstance(normalized, list) and len(normalized) == len(transcript):
+            for i, seg in enumerate(normalized):
+                if isinstance(seg, dict) and "speaker" in seg:
+                    transcript[i]["speaker"] = seg["speaker"]
+            unique_speakers = set(s.get("speaker") for s in transcript)
+            logger.info(f"[NORMALIZE] Done in {time.time() - t0:.1f}s — {len(unique_speakers)} unique speakers: {unique_speakers}")
+        else:
+            logger.warning(f"[NORMALIZE] Invalid response, keeping original labels")
+
         return transcript
 
     async def _analyze_transcript(self, transcript_text: str) -> Dict[str, Any]:

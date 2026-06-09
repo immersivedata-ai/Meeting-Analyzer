@@ -21,9 +21,6 @@ const ACCEPTED_FORMATS = {
 const MAX_FILE_SIZE = 150 * 1024 * 1024;
 
 const stepLabels: Record<string, string> = {
-  'Uploading...': 'Uploading your recording',
-  'Transcribing...': 'Generating transcript',
-  'Analyzing...': 'Extracting insights',
   'Complete!': 'Analysis complete',
 };
 
@@ -76,47 +73,36 @@ export const FileUpload = ({ onFileAnalyzed, isProcessing, setIsProcessing }: Fi
     try {
       const file = acceptedFiles[0];
 
-      setProcessingStep('Uploading...');
-      for (let i = 0; i <= 30; i += 5) {
-        setUploadProgress(i);
-        await new Promise(resolve => setTimeout(resolve, 100));
-      }
-
-      setProcessingStep('Transcribing...');
-      for (let i = 30; i <= 60; i += 5) {
-        setUploadProgress(i);
-        await new Promise(resolve => setTimeout(resolve, 200));
-      }
-
-      setProcessingStep('Analyzing...');
-      // Real API call happens here — can take 2-5 min for large files
+      setProcessingStep('Starting analysis...');
 
       let results;
 
       if (isDemoMode) {
         results = sampleAnalysisResults;
-        await new Promise(resolve => setTimeout(resolve, 1500));
+        setProcessingStep('Generating demo analysis...');
+        for (let i = 0; i <= 100; i += 5) {
+          setUploadProgress(i);
+          await new Promise(resolve => setTimeout(resolve, 100));
+        }
       } else {
         try {
-          // Create abort controller for cancel support
           const controller = new AbortController();
           abortRef.current = controller;
 
-          results = await analyzeFile(file, controller.signal);
+          results = await analyzeFile(file, controller.signal, (percent, step, message) => {
+            setUploadProgress(percent);
+            setProcessingStep(message);
+          });
           abortRef.current = null;
         } catch (apiError) {
           if (apiError instanceof Error && apiError.name === 'AbortError') {
-            return; // User cancelled — handleCancel already cleaned up
+            return;
           }
           throw new Error(`Server error: ${(apiError as Error).message || 'Failed to process file'}. Check server logs.`);
         }
       }
 
-      for (let i = 60; i <= 100; i += 10) {
-        setUploadProgress(i);
-        await new Promise(resolve => setTimeout(resolve, 100));
-      }
-
+      setUploadProgress(100);
       setProcessingStep('Complete!');
 
       setTimeout(() => {

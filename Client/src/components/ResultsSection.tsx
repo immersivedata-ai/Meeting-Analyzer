@@ -10,12 +10,15 @@ import {
   Clock,
   Hash,
   CheckCircle2,
+  Languages,
+  Loader2,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Badge } from '@/components/ui/badge';
 import { useToast } from '@/hooks/use-toast';
+import { translateText } from '@/lib/api/analysis';
 import type { AnalysisResults } from '@/types/analysis';
 
 interface ResultsSectionProps {
@@ -60,7 +63,32 @@ export const ResultsSection = ({ results }: ResultsSectionProps) => {
   const [actionItems, setActionItems] = useState(results.action_items?.map(item => item.text) || []);
   const [completedItems, setCompletedItems] = useState<Set<number>>(new Set());
   const [newActionItem, setNewActionItem] = useState('');
+  const [translations, setTranslations] = useState<Record<string, { loading: boolean; text?: string; lang?: string }>>({});
   const { toast } = useToast();
+
+  const handleTranslate = async (segId: string, text: string, lang: 'hi' | 'en') => {
+    const key = `${segId}:${lang}`
+    if (translations[key]?.text) {
+      setTranslations(prev => {
+        const next = { ...prev }
+        delete next[key]
+        return next
+      })
+      return
+    }
+    setTranslations(prev => ({ ...prev, [key]: { loading: true } }))
+    try {
+      const translated = await translateText(text, lang)
+      setTranslations(prev => ({ ...prev, [key]: { loading: false, text: translated, lang } }))
+    } catch {
+      setTranslations(prev => {
+        const next = { ...prev }
+        delete next[key]
+        return next
+      })
+      toast({ title: 'Translation failed', variant: 'destructive' })
+    }
+  }
 
   const copyToClipboard = async (text: string, label: string) => {
     try {
@@ -178,6 +206,45 @@ export const ResultsSection = ({ results }: ResultsSectionProps) => {
                           __html: highlightText(segment.text, searchTerm)
                         }}
                       />
+                      <div className="flex items-center gap-1 mt-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                        <button
+                          onClick={() => handleTranslate(segment.id || String(index), segment.text, 'hi')}
+                          className="inline-flex items-center gap-0.5 text-[10px] text-muted-foreground hover:text-primary"
+                        >
+                          {translations[`${segment.id || index}:hi`]?.loading ? (
+                            <Loader2 className="w-3 h-3 animate-spin" />
+                          ) : (
+                            <Languages className="w-3 h-3" />
+                          )}
+                          {translations[`${segment.id || index}:hi`]?.text ? 'Hide Hindi' : 'हिंदी'}
+                        </button>
+                        <span className="text-muted-foreground/40">·</span>
+                        <button
+                          onClick={() => handleTranslate(segment.id || String(index), segment.text, 'en')}
+                          className="inline-flex items-center gap-0.5 text-[10px] text-muted-foreground hover:text-primary"
+                        >
+                          {translations[`${segment.id || index}:en`]?.loading ? (
+                            <Loader2 className="w-3 h-3 animate-spin" />
+                          ) : (
+                            <Languages className="w-3 h-3" />
+                          )}
+                          {translations[`${segment.id || index}:en`]?.text ? 'Hide English' : 'English'}
+                        </button>
+                      </div>
+                      {(translations[`${segment.id || index}:hi`]?.text || translations[`${segment.id || index}:en`]?.text) && (
+                        <div className="mt-1.5 space-y-1">
+                          {translations[`${segment.id || index}:hi`]?.text && (
+                            <p className="text-xs text-primary/70 italic pl-2 border-l-2 border-primary/20">
+                              {translations[`${segment.id || index}:hi`]!.text}
+                            </p>
+                          )}
+                          {translations[`${segment.id || index}:en`]?.text && (
+                            <p className="text-xs text-primary/70 italic pl-2 border-l-2 border-primary/20">
+                              {translations[`${segment.id || index}:en`]!.text}
+                            </p>
+                          )}
+                        </div>
+                      )}
                     </div>
                   </div>
                 ))}

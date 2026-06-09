@@ -92,7 +92,6 @@ def set_session_cookie(response: Response, session_token: str, expires_at: datet
         httponly=True,
         secure=os.getenv("COOKIE_SECURE", "false").lower() == "true",
         samesite=os.getenv("COOKIE_SAMESITE", "lax"),
-        max_age=int((expires_at - datetime.now(timezone.utc)).total_seconds()),
         path="/",
     )
 

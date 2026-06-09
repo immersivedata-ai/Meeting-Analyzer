@@ -2,6 +2,7 @@
 Complete production analysis endpoint router using API services.
 """
 
+import json
 import os
 import tempfile
 import traceback
@@ -13,7 +14,7 @@ from typing import Dict, Any, List, Optional
 
 from bson import ObjectId
 from fastapi import APIRouter, File, UploadFile, HTTPException, BackgroundTasks, Depends
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, StreamingResponse
 from pydantic import BaseModel, Field
 
 from app.models.schemas import AnalysisResponse
@@ -58,11 +59,17 @@ class DeleteResponse(BaseModel):
     message: str
 
 
+def _utc_isoformat(dt: datetime) -> str:
+    if dt.tzinfo is None:
+        dt = dt.replace(tzinfo=timezone.utc)
+    return dt.isoformat()
+
+
 def _analysis_to_summary(doc: dict) -> AnalysisSummary:
     return AnalysisSummary(
         id=str(doc["_id"]),
         filename=doc.get("filename", "Unknown"),
-        created_at=doc.get("created_at", datetime.now(timezone.utc)).isoformat(),
+        created_at=_utc_isoformat(doc.get("created_at", datetime.now(timezone.utc))),
         action_items_count=len(doc.get("action_items", [])),
         decisions_count=len(doc.get("key_decisions", [])),
         word_count=doc.get("word_count", 0),
@@ -278,6 +285,143 @@ async def analyze_meeting(
         )
 
 
+# --- Streaming analysis endpoint ---
+
+@router.post("/analyze/stream")
+async def analyze_meeting_stream(
+    background_tasks: BackgroundTasks,
+    file: UploadFile = File(...),
+    settings: Settings = Depends(get_settings_dependency),
+    user: dict = Depends(get_current_user),
+):
+    session_id = str(uuid.uuid4())
+    temp_dir = None
+    temp_filepath = None
+    start_time = time.time()
+
+    if not file.filename:
+        raise HTTPException(status_code=400, detail="No file provided")
+    if not validate_audio_file(file):
+        raise HTTPException(status_code=400, detail=f"Invalid file format")
+    if hasattr(file, 'size') and file.size and file.size > settings.MAX_FILE_SIZE:
+        raise HTTPException(status_code=400, detail="File too large")
+
+    async def event_stream():
+        nonlocal temp_dir, temp_filepath
+        try:
+            temp_dir = tempfile.mkdtemp(prefix=f"session_{session_id}_")
+            safe_filename = f"{session_id}_{file.filename}"
+            temp_filepath = os.path.join(temp_dir, safe_filename)
+
+            with open(temp_filepath, "wb") as f:
+                f.write(await file.read())
+
+            if not audio_processor.validate_audio_file(temp_filepath):
+                yield json.dumps({"status": "error", "message": "Corrupted or invalid audio file"}) + "\n"
+                return
+
+            audio_info = audio_processor.get_audio_info(temp_filepath)
+            if audio_info.get('duration', 0) > settings.MAX_AUDIO_DURATION:
+                yield json.dumps({"status": "error", "message": f"Audio too long ({audio_info['duration']:.1f}s)"}) + "\n"
+                return
+
+            if not settings.validate_api_keys():
+                yield json.dumps({"status": "error", "message": "API key not configured"}) + "\n"
+                return
+
+            processed_audio_path = await audio_processor.process_audio(temp_filepath, session_id)
+
+            async with ProductionNLPAnalyzer() as nlp_analyzer:
+                async for event in nlp_analyzer.analyze_meeting_streaming(processed_audio_path):
+                    if event["status"] == "complete":
+                        analysis_result = event["result"]
+                        processing_time = round(time.time() - start_time, 2)
+                        analysis_result["processing_time"] = processing_time
+
+                        transcript = analysis_result.get("transcript", [])
+                        word_count = sum(len(seg.get("text", "").split()) for seg in transcript if isinstance(seg, dict))
+
+                        response = AnalysisResponse(
+                            session_id=session_id,
+                            filename=file.filename,
+                            **analysis_result,
+                        )
+
+                        try:
+                            transcript_data = [seg.dict() if hasattr(seg, 'dict') else seg for seg in response.transcript]
+                            action_items_data = [item.dict() if hasattr(item, 'dict') else item for item in response.action_items]
+                            decisions_data = [d.dict() if hasattr(d, 'dict') else d for d in response.key_decisions]
+
+                            await analyses_collection.insert_one({
+                                "user_id": user["_id"],
+                                "session_id": session_id,
+                                "filename": file.filename,
+                                "transcript": transcript_data,
+                                "summary": response.summary,
+                                "action_items": action_items_data,
+                                "key_decisions": decisions_data,
+                                "processing_time": analysis_result.get("processing_time", 0),
+                                "duration": audio_info.get("duration", 0),
+                                "word_count": word_count,
+                                "created_at": datetime.now(timezone.utc),
+                            })
+                        except Exception as save_error:
+                            logger.error(f"Failed to save analysis: {save_error}")
+
+                        final_payload = {
+                            "status": "complete",
+                            "session_id": session_id,
+                            "filename": file.filename,
+                            "transcript": transcript_data,
+                            "summary": response.summary,
+                            "action_items": action_items_data,
+                            "key_decisions": decisions_data,
+                            "processing_time": analysis_result.get("processing_time", 0),
+                        }
+                        yield json.dumps(final_payload, default=str) + "\n"
+                    else:
+                        yield json.dumps(event) + "\n"
+
+        except Exception as e:
+            logger.error(f"Stream error: {e}")
+            logger.error(traceback.format_exc())
+            yield json.dumps({"status": "error", "message": str(e)}) + "\n"
+        finally:
+            if temp_dir:
+                background_tasks.add_task(cleanup_temp_files, temp_dir)
+
+    return StreamingResponse(
+        event_stream(),
+        media_type="text/plain",
+        headers={"X-Accel-Buffering": "no", "Cache-Control": "no-cache"},
+    )
+
+
+# --- Translation endpoint ---
+
+class TranslateRequest(BaseModel):
+    text: str
+    target_lang: str  # "hi" or "en"
+
+class TranslateResponse(BaseModel):
+    translated: str
+
+@router.post("/translate", response_model=TranslateResponse)
+async def translate_text(
+    body: TranslateRequest,
+    user: dict = Depends(get_current_user),
+):
+    if body.target_lang not in ("hi", "en"):
+        raise HTTPException(status_code=400, detail="target_lang must be 'hi' or 'en'")
+    if not body.text or not body.text.strip():
+        raise HTTPException(status_code=400, detail="text is required")
+
+    async with ProductionNLPAnalyzer() as nlp:
+        translated = await nlp.translate_text(body.text, body.target_lang)
+
+    return TranslateResponse(translated=translated)
+
+
 # --- History endpoints ---
 
 @router.get("/analyses", response_model=AnalysisHistoryResponse)
@@ -325,7 +469,7 @@ async def get_analysis(
 
     doc["id"] = str(doc.pop("_id"))
     doc.pop("user_id", None)
-    doc["created_at"] = doc["created_at"].isoformat()
+    doc["created_at"] = _utc_isoformat(doc["created_at"])
 
     return doc
 

@@ -13,7 +13,7 @@ from fastapi.responses import JSONResponse
 from fastapi.exceptions import RequestValidationError
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
-from app.database import ensure_indexes
+from app.database import ensure_indexes, sessions_collection
 from app.routers import analyze, auth, meta
 from app.utils.file_handler import cleanup_temp_files
 from app.utils.config import get_settings
@@ -50,6 +50,9 @@ async def lifespan(app: FastAPI):
 
         await ensure_indexes()
         logger.info("Database indexes ready")
+
+        result = await sessions_collection.delete_many({})
+        logger.info(f"Cleared {result.deleted_count} existing sessions — fresh login required")
 
         import shutil
         disk_usage = shutil.disk_usage(temp_dir)

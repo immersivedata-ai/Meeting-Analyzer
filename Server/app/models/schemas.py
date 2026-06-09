@@ -114,7 +114,7 @@ class AnalysisResponse(BaseModel):
         """Pydantic model configuration."""
         use_enum_values = True
         json_encoders = {
-            datetime: lambda v: v.isoformat()
+            datetime: lambda v: v.replace(tzinfo=timezone.utc).isoformat() if v.tzinfo is None else v.isoformat()
         }
 
 
