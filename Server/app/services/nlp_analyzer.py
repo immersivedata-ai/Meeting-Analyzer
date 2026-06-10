@@ -40,72 +40,7 @@ TRANSCRIPTION_PROMPT = """Transcribe this meeting audio segment. Return ONLY val
   ]
 }
 
-═══════════════════════════════════
-SCRIPT RULES — READ FIRST. VIOLATING THESE WILL PRODUCE WRONG OUTPUT.
-═══════════════════════════════════
-
-Rule 1: Hindi words → ALWAYS Devanagari (हिंदी)
-Rule 2: English words → ALWAYS Latin (English)
-Rule 3: English loanwords in Hindi sentences → ALWAYS Latin
-
-NEVER write these English words in Devanagari. They are English words spoken within Hindi sentences — keep them in Latin script:
-
-WRONG → CORRECT
-एप्लीकेशन → application
-एप्लीकेशंस → applications
-यूजर → user
-यूजर्स → users
-पेशेंट → patient
-पेशेंट्स → patients
-कन्वर्सेशन → conversation
-कन्वर्सेशंस → conversations
-कंपोनेंट → component
-डेटाबेस → database
-डेवलपमेंट → development
-डिजाइन → design
-इंटीग्रेट → integrate
-इनपुट → input
-आउटपुट → output
-सिस्टम → system
-प्रोजेक्ट → project
-फीचर → feature
-स्टोर → store
-चार्ट → chart/chat
-सर्च → search
-लिस्ट → list
-अकाउंट → account
-परमिशन → permission
-पार्टिसिपेंट → participant
-मेंबर → member
-ग्रुप → group
-प्रॉब्लम → problem
-फ्लॉ → flow
-करेक्ट → correct
-राइट → right
-ओके → okay
-एग्जेक्टली → exactly
-टोटली → totally
-न्यू → new
-पर्सपेक्टिव → perspective
-डिस्कशन → discussion
-क्वेश्चन → question
-डुप्लीकेसी → duplicity
-API → API
-PDF → PDF
-OK → OK
-ID → ID
-हां → haan
-हम्म → hmm
-हा → haa
-अच्छा → achha
-ठीक → theek
-
-Also: NEVER write English words like "the", "is", "a", "an", "of", "in", "on", "to", "for", "and", "or", "but", "with", "from", "this", "that", "what", "when", "where", "how", "why", "who", "which", "has", "have", "had", "will", "would", "can", "could", "should", "may", "might", "must", "shall", "as", "at", "by", "so", "if", "no", "not", "yes", "be", "do", "go", "get", "see", "know", "think", "say", "tell", "ask", "give", "take", "make", "come", "want", "need", "like", "use" in Devanagari. These are ALWAYS Latin.
-
-Example of correct Hinglish transcription:
-Speaker says: "toh user list account ka details right voh sab aapko mil jayega"
-CORRECT: "तो user list account का details right वो सब आपको मिल जाएगा"
-WRONG: "तो यूजर लिस्ट अकाउंट का डिटेल्स राइट वो सब आपको मिल जाएगा"
+SCRIPT RULE: Transcribe ALL speech in LATIN (Roman) script. If the speaker says Hindi words like "मैं ठीक हूं", write them as "main theek hoon". If the speaker says English words like "meeting", write "meeting". Everything in Latin script — no Devanagari, no Hindi script.
 
 CRITICAL — Speaker Identification Rules:
 - For EVERY segment, FIRST identify the speaker by their UNIQUE voice characteristics: gender (male/female), pitch (high/medium/deep), age (young/middle-aged/older), accent, speaking speed.
@@ -119,12 +54,10 @@ CRITICAL — Speaker Identification Rules:
 
 CRITICAL — Speaker Naming Rules (DO NOT VIOLATE):
 - NEVER guess or infer a speaker's name. Always use "Speaker 1", "Speaker 2", "Speaker 3" by default.
-- ONLY use an actual name if the speaker EXPLICITLY introduces themselves with phrases like "My name is X", "I am X", "This is X speaking". Hearing someone's name mentioned in conversation is NOT enough — the speaker must identify THEMSELVES.
-- If someone says "Ishan told me..." — the speaker is NOT Ishan. Ishan is a different person being talked about. The speaker remains Speaker N.
+- ONLY use an actual name if the speaker EXPLICITLY introduces themselves with phrases like "My name is X", "I am X", "This is X speaking".
+- If someone says "Ishan told me..." — the speaker is NOT Ishan. Ishan is a different person being talked about.
 - If someone says "Hi, I'm Rahul" — THEN and ONLY THEN can you label that voice as "Rahul" from that point onward.
-- When in ANY doubt about a name, use Speaker N. It is always better to use Speaker 1/2/3 than to guess a wrong name.
-
-REMEMBER: Follow the SCRIPT RULES at the top. Hindi in Devanagari, English words in Latin, English loanwords in Latin.
+- When in ANY doubt about a name, use Speaker N.
 
 Return ONLY the JSON object, nothing else"""
 
@@ -231,19 +164,7 @@ Return exactly this structure:
 CRITICAL — Output Language:
 - Summary, action items, key decisions, sentiment, and topics MUST be written in English only — regardless of the meeting language. Even if the meeting is in Hindi or Hinglish, the analysis output must be in English.
 
-═══════════════════════════════════
-TRANSCRIPT SCRIPT RULES — DO NOT WRITE ENGLISH WORDS IN DEVANAGARI
-═══════════════════════════════════
-
-For the transcript text field ONLY:
-- Hindi words → Devanagari (हिंदी)
-- English words → Latin script. NEVER transliterate English words into Devanagari.
-- English loanwords in Hindi sentences → Latin script.
-
-NEVER write these in Devanagari: user (यूजर), patient (पेशेंट), application (एप्लीकेशन), conversation (कन्वर्सेशन), component (कंपोनेंट), database (डेटाबेस), development (डेवलपमेंट), design (डिजाइन), project (प्रोजेक्ट), feature (फीचर), system (सिस्टम), store (स्टोर), search (सर्च), list (लिस्ट), account (अकाउंट), permission (परमिशन), member (मेंबर), group (ग्रुप), problem (प्रॉब्लम), correct (करेक्ट), right (राइट), okay (ओके), exactly (एग्जेक्टली), totally (टोटली), new (न्यू), question (क्वेश्चन), hmm (हम्म), haan (हां), haa (हा), achha (अच्छा), theek (ठीक), API, PDF, OK, ID
-
-Correct Hinglish: "तो user list account का details right वो सब आपको मिल जाएगा"
-Wrong Hinglish: "तो यूजर लिस्ट अकाउंट का डिटेल्स राइट वो सब आपको मिल जाएगा"
+For the transcript text field: Transcribe ALL speech in LATIN (Roman) script. Hindi words like "मैं ठीक हूं" → "main theek hoon". No Devanagari.
 
 CRITICAL — Speaker Identification Rules (READ CAREFULLY — THIS IS THE MOST IMPORTANT PART):
 - For EVERY segment, FIRST identify the speaker by their UNIQUE voice characteristics: gender (male/female), pitch (high/medium/deep), age (young/middle-aged/older), accent, speaking speed.
@@ -489,20 +410,6 @@ class ProductionNLPAnalyzer:
                 return self._get_demo_analysis(reason=f"JSON parse failed — Gemini returned non-JSON ({len(raw_text)} chars)")
 
             logger.info(f"[SINGLE 4/4] Parsed in {time.time()-t1:.1f}s — keys: {list(result.keys())}")
-
-            if self._contains_devanagari(result.get("summary", "")):
-                logger.info("[SINGLE] Detected Hindi in summary — translating to English...")
-                result["summary"] = await self.translate_text(result["summary"], "en")
-            for i, item in enumerate(result.get("action_items", [])):
-                if isinstance(item, dict) and self._contains_devanagari(item.get("text", "")):
-                    result["action_items"][i]["text"] = await self.translate_text(item["text"], "en")
-            for i, d in enumerate(result.get("key_decisions", [])):
-                if isinstance(d, dict):
-                    if self._contains_devanagari(d.get("decision", "")):
-                        result["key_decisions"][i]["decision"] = await self.translate_text(d["decision"], "en")
-                    if self._contains_devanagari(d.get("rationale", "")):
-                        result["key_decisions"][i]["rationale"] = await self.translate_text(d["rationale"], "en")
-
             final = self._build_analysis_result(result)
             logger.info(
                 f"[SINGLE DONE] Total: {time.time()-t0:.1f}s | "
@@ -727,22 +634,6 @@ class ProductionNLPAnalyzer:
             speakers = set(s.get("speaker") for s in transcript)
             logger.info(f"[COMBINED] Speakers normalized: {speakers}")
 
-        if self._contains_devanagari(data.get("summary", "")):
-            logger.info("[COMBINED] Hindi detected in summary — translating")
-            data["summary"] = await self.translate_text(data["summary"], "en")
-        for i, item in enumerate(data.get("action_items", [])):
-            if isinstance(item, dict) and self._contains_devanagari(item.get("text", "")):
-                data["action_items"][i]["text"] = await self.translate_text(item["text"], "en")
-        for i, d in enumerate(data.get("key_decisions", [])):
-            if isinstance(d, dict):
-                if self._contains_devanagari(d.get("decision", "")):
-                    data["key_decisions"][i]["decision"] = await self.translate_text(d["decision"], "en")
-                if self._contains_devanagari(d.get("rationale", "")):
-                    data["key_decisions"][i]["rationale"] = await self.translate_text(d["rationale"], "en")
-
-        if isinstance(data.get("sentiment", {}).get("tone", ""), str) and self._contains_devanagari(data["sentiment"]["tone"]):
-            data["sentiment"]["tone"] = await self.translate_text(data["sentiment"]["tone"], "en")
-
         logger.info(f"[COMBINED] Done in {time.time() - t0:.1f}s")
         return data
 
@@ -804,27 +695,6 @@ class ProductionNLPAnalyzer:
         if not data:
             logger.error(f"[TEXT-ANALYSIS] JSON PARSE FAILED — raw ({len(raw_text)} chars): {raw_text[:500]}")
             return {"summary": "Analysis unavailable", "action_items": [], "key_decisions": [], "sentiment": {"overall": "neutral", "tone": "unknown", "score": 0.5}, "topics": []}
-
-        if self._contains_devanagari(data.get("summary", "")):
-            logger.info("[TEXT-ANALYSIS] Detected Hindi in summary — translating to English...")
-            data["summary"] = await self.translate_text(data["summary"], "en")
-
-        items = data.get("action_items", [])
-        for i, item in enumerate(items):
-            if isinstance(item, dict) and self._contains_devanagari(item.get("text", "")):
-                items[i]["text"] = await self.translate_text(item["text"], "en")
-
-        decisions = data.get("key_decisions", [])
-        for i, d in enumerate(decisions):
-            if isinstance(d, dict):
-                if self._contains_devanagari(d.get("decision", "")):
-                    decisions[i]["decision"] = await self.translate_text(d["decision"], "en")
-                if self._contains_devanagari(d.get("rationale", "")):
-                    decisions[i]["rationale"] = await self.translate_text(d["rationale"], "en")
-
-        tone = data.get("sentiment", {}).get("tone", "")
-        if isinstance(tone, str) and self._contains_devanagari(tone):
-            data["sentiment"]["tone"] = await self.translate_text(tone, "en")
 
         return data
 

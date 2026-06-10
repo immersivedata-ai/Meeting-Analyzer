@@ -35,7 +35,7 @@ audio_processor = ProductionAudioProcessor()
 try:
     from app.services.speech_diarizer import SpeechDiarizer
     diarizer = SpeechDiarizer()
-    logger.info("Google Cloud STT diarizer loaded — will use for speaker-accurate transcription")
+    logger.info("Deepgram diarizer loaded — will use for speaker-accurate transcription")
 except Exception as e:
     diarizer = None
     logger.warning(f"SpeechDiarizer not available ({e}) — falling back to Gemini transcription")
