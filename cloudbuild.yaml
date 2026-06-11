@@ -1,0 +1,90 @@
+steps:
+  # Build & push backend
+  - name: gcr.io/cloud-builders/docker
+    args:
+      - build
+      - -t
+      - gcr.io/$PROJECT_ID/manthan-api
+      - ./Server
+    id: build-backend
+
+  - name: gcr.io/cloud-builders/docker
+    args:
+      - push
+      - gcr.io/$PROJECT_ID/manthan-api
+    id: push-backend
+    waitFor: [build-backend]
+
+  # Deploy backend
+  - name: gcr.io/cloud-builders/gcloud
+    args:
+      - run
+      - deploy
+      - manthan-api
+      - --image=gcr.io/$PROJECT_ID/manthan-api
+      - --region=us-central1
+      - --platform=managed
+      - --allow-unauthenticated
+      - --memory=1Gi
+      - --cpu=1
+      - --timeout=600
+      - --set-env-vars=MONGODB_URI=${_MONGODB_URI},GEMINI_API_KEY=${_GEMINI_API_KEY},DEEPGRAM_API_KEY=${_DEEPGRAM_API_KEY},SESSION_SECRET=${_SESSION_SECRET}
+    id: deploy-backend
+    waitFor: [push-backend]
+
+  # Get backend URL
+  - name: gcr.io/cloud-builders/gcloud
+    entrypoint: bash
+    args:
+      - -c
+      - |
+        gcloud run services describe manthan-api --region=us-central1 --format='value(status.url)' > /workspace/api-url.txt
+        cat /workspace/api-url.txt
+    id: get-api-url
+    waitFor: [deploy-backend]
+
+  # Build & push frontend with API URL
+  - name: gcr.io/cloud-builders/docker
+    entrypoint: bash
+    args:
+      - -c
+      - |
+        API_URL=$(cat /workspace/api-url.txt)
+        docker build \
+          --build-arg VITE_API_URL="$${API_URL}/api" \
+          -t gcr.io/$PROJECT_ID/manthan-web \
+          ./Client
+    id: build-frontend
+    waitFor: [get-api-url]
+
+  - name: gcr.io/cloud-builders/docker
+    args:
+      - push
+      - gcr.io/$PROJECT_ID/manthan-web
+    id: push-frontend
+    waitFor: [build-frontend]
+
+  # Deploy frontend
+  - name: gcr.io/cloud-builders/gcloud
+    args:
+      - run
+      - deploy
+      - manthan-web
+      - --image=gcr.io/$PROJECT_ID/manthan-web
+      - --region=us-central1
+      - --platform=managed
+      - --allow-unauthenticated
+      - --memory=256Mi
+      - --cpu=1
+    id: deploy-frontend
+    waitFor: [push-frontend]
+
+substitutions:
+  _MONGODB_URI: ''
+  _GEMINI_API_KEY: ''
+  _DEEPGRAM_API_KEY: ''
+  _SESSION_SECRET: ''
+
+images:
+  - gcr.io/$PROJECT_ID/manthan-api
+  - gcr.io/$PROJECT_ID/manthan-web

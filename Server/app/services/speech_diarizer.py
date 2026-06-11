@@ -1,5 +1,6 @@
 """
 Deepgram speech-to-text with speaker diarization.
+Pure Deepgram — no post-processing, no transliteration.
 """
 
 import asyncio
@@ -32,7 +33,7 @@ class SpeechDiarizer:
     def is_ready(self) -> bool:
         return self._ready
 
-    async def transcribe(self, audio_path: str, language: str = "hi") -> List[dict]:
+    async def transcribe(self, audio_path: str) -> List[dict]:
         t0 = time.time()
         file_size_mb = os.path.getsize(audio_path) / (1024 * 1024)
         logger.info(f"[DEEPGRAM] Transcribing {file_size_mb:.1f} MB — diarization + punctuation")
@@ -44,7 +45,7 @@ class SpeechDiarizer:
             self.client.listen.v1.media.transcribe_file,
             request=audio_bytes,
             model="nova-3",
-            language=language,
+            language="hi",
             diarize_model="latest",
             punctuate=True,
             smart_format=True,
@@ -76,4 +77,46 @@ class SpeechDiarizer:
                     "confidence": round(getattr(u, "confidence", 0.9) or 0.9, 3),
                 })
 
-        return segments
+        return self._merge_consecutive(segments)
+
+    def _merge_consecutive(self, segments: List[dict]) -> List[dict]:
+        """Merge consecutive same-speaker segments. Fix boundary fragments."""
+        if not segments:
+            return segments
+
+        # First pass: fix fragments — if a segment is just 1-2 short words
+        # and the next segment starts mid-sentence, merge forward
+        for i in range(len(segments) - 1):
+            curr = segments[i]
+            nxt = segments[i + 1]
+            curr_words = curr["text"].strip().split()
+            nxt_words = nxt["text"].strip().split()
+
+            # If current segment ends in a fragment (1-3 words) and
+            # next segment starts lowercase (mid-sentence continuation),
+            # merge current into next speaker
+            if 0 < len(curr_words) <= 3 and nxt_words:
+                first_nxt = nxt_words[0]
+                if first_nxt and first_nxt[0].islower():
+                    nxt["text"] = curr["text"] + " " + nxt["text"]
+                    nxt["start_time"] = curr["start_time"]
+                    nxt["confidence"] = round((curr["confidence"] + nxt["confidence"]) / 2, 3)
+                    segments[i] = None  # mark for removal
+
+        segments = [s for s in segments if s is not None]
+
+        # Second pass: merge same speaker with gap < 3s
+        if not segments:
+            return segments
+
+        merged = [dict(segments[0])]
+        for seg in segments[1:]:
+            last = merged[-1]
+            gap = seg["start_time"] - last["end_time"]
+            if seg["speaker"] == last["speaker"] and gap < 3.0:
+                last["text"] = last["text"] + " " + seg["text"]
+                last["end_time"] = seg["end_time"]
+                last["confidence"] = round((last["confidence"] + seg["confidence"]) / 2, 3)
+            else:
+                merged.append(dict(seg))
+        return merged
