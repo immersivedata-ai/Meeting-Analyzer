@@ -8,20 +8,28 @@ load_dotenv()
 MONGODB_URI = os.getenv("MONGODB_URI")
 MONGODB_DB = os.getenv("MONGODB_DB", "manthan_ai")
 
-if not MONGODB_URI:
-    raise RuntimeError("MONGODB_URI is not configured")
+_client = None
+_db = None
+users_collection = None
+sessions_collection = None
+password_resets_collection = None
+analyses_collection = None
 
-client = AsyncIOMotorClient(MONGODB_URI, tlsAllowInvalidCertificates=True)
-
-db = client[MONGODB_DB]
-
-users_collection = db["users"]
-sessions_collection = db["sessions"]
-password_resets_collection = db["password_resets"]
-analyses_collection = db["analyses"]
+if MONGODB_URI:
+    try:
+        _client = AsyncIOMotorClient(MONGODB_URI, tlsAllowInvalidCertificates=True)
+        _db = _client[MONGODB_DB]
+        users_collection = _db["users"]
+        sessions_collection = _db["sessions"]
+        password_resets_collection = _db["password_resets"]
+        analyses_collection = _db["analyses"]
+    except Exception:
+        pass
 
 
 async def ensure_indexes() -> None:
+    if analyses_collection is None:
+        return
     await users_collection.create_index("email", unique=True)
     await sessions_collection.create_index("session_token_hash", unique=True)
     await sessions_collection.create_index("expires_at", expireAfterSeconds=0)
