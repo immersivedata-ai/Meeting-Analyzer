@@ -31,6 +31,7 @@ steps:
       - --memory=1Gi
       - --cpu=1
       - --timeout=600
+      - --service-account=immersivedata-sandbox@appspot.gserviceaccount.com
       - --set-env-vars=MONGODB_URI=${_MONGODB_URI},GEMINI_API_KEY=${_GEMINI_API_KEY},DEEPGRAM_API_KEY=${_DEEPGRAM_API_KEY},SESSION_SECRET=${_SESSION_SECRET}
     id: deploy-backend
     waitFor: [push-backend]
@@ -79,6 +80,7 @@ steps:
       - --allow-unauthenticated
       - --memory=256Mi
       - --cpu=1
+      - --service-account=immersivedata-sandbox@appspot.gserviceaccount.com
     id: deploy-frontend
     waitFor: [push-frontend]
 
