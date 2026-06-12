@@ -398,11 +398,20 @@ async def analyze_meeting_stream(
                             out.write(cf.read())
                 background_tasks.add_task(cleanup_temp_files, chunk_dir)
             elif is_gcs:
-                yield json.dumps({"status": "progress", "step": "transcribing", "percent": 10, "message": "Transcribing with speaker diarization..."}) + "\n"
+                yield json.dumps({"status": "progress", "step": "transcribing", "percent": 5, "message": "Preparing audio..."}) + "\n"
                 if not diarizer or not diarizer.is_ready():
                     yield json.dumps({"status": "error", "message": "Diarizer not available for GCS uploads"}) + "\n"
                     return
-                signed_url = gcs_handler.generate_download_url(gcs_path)
+
+                audio_gcs_path = gcs_path
+                # Extract audio if video file
+                ext = os.path.splitext(original_filename)[1].lower()
+                if ext in (".mp4", ".webm", ".mov", ".avi", ".mkv"):
+                    audio_gcs_path = gcs_path.rsplit(".", 1)[0] + "_audio.mp3"
+                    yield json.dumps({"status": "progress", "step": "extracting", "percent": 7, "message": "Extracting audio from video..."}) + "\n"
+                    gcs_handler.extract_audio(gcs_path, audio_gcs_path)
+
+                signed_url = gcs_handler.generate_download_url(audio_gcs_path)
                 transcript_segments = await diarizer.transcribe_url(signed_url)
                 yield json.dumps({"status": "progress", "step": "transcribing", "percent": 70, "message": f"Transcribed {len(transcript_segments)} segments"}) + "\n"
 
@@ -427,6 +436,7 @@ async def analyze_meeting_stream(
                         "action_items": action_items_data, "key_decisions": decisions_data,
                         "processing_time": processing_time, "duration": 0, "word_count": word_count,
                         "created_at": datetime.now(timezone.utc),
+                        "gcs_path": gcs_path, "audio_gcs_path": audio_gcs_path,
                     })
                 except Exception as save_error:
                     logger.error(f"Failed to save analysis: {save_error}")

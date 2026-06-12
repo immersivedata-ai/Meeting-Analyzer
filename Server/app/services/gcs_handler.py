@@ -1,10 +1,12 @@
 """
-Google Cloud Storage handler — signed URLs, downloads, uploads.
+Google Cloud Storage handler — signed URLs, downloads, uploads, ffmpeg extraction.
 """
 
 import datetime
 import logging
 import os
+import subprocess
+import tempfile
 from typing import Tuple
 
 from google.cloud import storage
@@ -53,6 +55,37 @@ def download_to_file(gcs_path: str, local_path: str) -> None:
     blob = _bucket.blob(blob_name)
     blob.download_to_filename(local_path)
     logger.info(f"[GCS] Downloaded {gcs_path} to {local_path}")
+
+
+def upload_file(local_path: str, gcs_path: str) -> None:
+    """Upload a local file to GCS."""
+    blob_name = gcs_path.replace(f"gs://{GCS_BUCKET}/", "")
+    blob = _bucket.blob(blob_name)
+    blob.upload_from_filename(local_path)
+    logger.info(f"[GCS] Uploaded {local_path} to {gcs_path}")
+
+
+def extract_audio(input_gcs_path: str, output_gcs_path: str) -> None:
+    """Download video from GCS, extract audio via ffmpeg, upload audio back to GCS."""
+    fd, tmp_video = tempfile.mkstemp(suffix="_video")
+    os.close(fd)
+    fd, tmp_audio = tempfile.mkstemp(suffix=".mp3")
+    os.close(fd)
+
+    try:
+        download_to_file(input_gcs_path, tmp_video)
+        subprocess.run(
+            ["ffmpeg", "-y", "-i", tmp_video, "-vn", "-acodec", "libmp3lame", "-ar", "16000", "-ac", "1", "-b:a", "64k", tmp_audio],
+            check=True, capture_output=True,
+        )
+        upload_file(tmp_audio, output_gcs_path)
+        logger.info(f"[GCS] Audio extracted: {input_gcs_path} → {output_gcs_path}")
+    finally:
+        for p in [tmp_video, tmp_audio]:
+            try:
+                os.remove(p)
+            except Exception:
+                pass
 
 
 def delete_blob(gcs_path: str) -> None:
