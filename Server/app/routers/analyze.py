@@ -13,7 +13,7 @@ from datetime import datetime, timezone
 from typing import Dict, Any, List, Optional
 
 from bson import ObjectId
-from fastapi import APIRouter, File, Request, UploadFile, HTTPException, BackgroundTasks, Depends
+from fastapi import APIRouter, File, Form, Request, UploadFile, HTTPException, BackgroundTasks, Depends
 from fastapi.responses import JSONResponse, StreamingResponse
 from pydantic import BaseModel, Field
 
@@ -304,13 +304,42 @@ async def analyze_meeting(
         )
 
 
+# --- Chunked upload ---
+
+@router.post("/upload/chunk")
+async def upload_chunk(
+    upload_id: str = Form(...),
+    chunk_index: int = Form(...),
+    total_chunks: int = Form(...),
+    original_filename: str = Form(...),
+    chunk: UploadFile = File(...),
+    user: dict = Depends(get_current_user),
+):
+    """Receive one chunk of a chunked file upload. Reassembled later during analysis."""
+    chunk_dir = os.path.join(tempfile.gettempdir(), "manthan_chunks", upload_id)
+    os.makedirs(chunk_dir, exist_ok=True)
+
+    manifest_path = os.path.join(chunk_dir, "manifest.json")
+    if not os.path.exists(manifest_path):
+        with open(manifest_path, "w") as f:
+            json.dump({"filename": original_filename, "total_chunks": total_chunks}, f)
+
+    chunk_path = os.path.join(chunk_dir, f"chunk_{chunk_index:05d}")
+    with open(chunk_path, "wb") as f:
+        f.write(await chunk.read())
+
+    return {"status": "ok", "chunk": chunk_index}
+
+
 # --- Streaming analysis endpoint ---
 
 @router.post("/analyze/stream")
 async def analyze_meeting_stream(
     background_tasks: BackgroundTasks,
     request: Request,
-    file: UploadFile = File(...),
+    file: UploadFile = File(None),
+    upload_id: str = Form(None),
+    original_filename: str = Form(None),
     settings: Settings = Depends(get_settings_dependency),
     user: dict = Depends(get_current_user),
 ):
@@ -319,22 +348,46 @@ async def analyze_meeting_stream(
     temp_filepath = None
     start_time = time.time()
 
-    if not file.filename:
+    is_chunked = bool(upload_id)
+    if is_chunked:
+        if not original_filename:
+            original_filename = "recording.mp3"
+    elif not file or not file.filename:
         raise HTTPException(status_code=400, detail="No file provided")
-    if not validate_audio_file(file):
+    elif not validate_audio_file(file):
         raise HTTPException(status_code=400, detail=f"Invalid file format")
-    if hasattr(file, 'size') and file.size and file.size > settings.MAX_FILE_SIZE:
+    elif hasattr(file, 'size') and file.size and file.size > settings.MAX_FILE_SIZE:
         raise HTTPException(status_code=400, detail="File too large")
+    else:
+        original_filename = file.filename
 
     async def event_stream():
         nonlocal temp_dir, temp_filepath
         try:
             temp_dir = tempfile.mkdtemp(prefix=f"session_{session_id}_")
-            safe_filename = f"{session_id}_{file.filename}"
+            safe_filename = f"{session_id}_{original_filename}"
             temp_filepath = os.path.join(temp_dir, safe_filename)
 
-            with open(temp_filepath, "wb") as f:
-                f.write(await file.read())
+            if is_chunked:
+                chunk_dir = os.path.join(tempfile.gettempdir(), "manthan_chunks", upload_id)
+                manifest_path = os.path.join(chunk_dir, "manifest.json")
+                if not os.path.exists(manifest_path):
+                    yield json.dumps({"status": "error", "message": "Upload incomplete"}) + "\n"
+                    return
+                with open(manifest_path) as mf:
+                    manifest = json.load(mf)
+                with open(temp_filepath, "wb") as out:
+                    for i in range(manifest["total_chunks"]):
+                        cp = os.path.join(chunk_dir, f"chunk_{i:05d}")
+                        if not os.path.exists(cp):
+                            yield json.dumps({"status": "error", "message": f"Missing chunk {i}"}) + "\n"
+                            return
+                        with open(cp, "rb") as cf:
+                            out.write(cf.read())
+                background_tasks.add_task(cleanup_temp_files, chunk_dir)
+            else:
+                with open(temp_filepath, "wb") as f:
+                    f.write(await file.read())
 
             if not audio_processor.validate_audio_file(temp_filepath):
                 yield json.dumps({"status": "error", "message": "Corrupted or invalid audio file"}) + "\n"
@@ -369,7 +422,7 @@ async def analyze_meeting_stream(
 
                 response = AnalysisResponse(
                     session_id=session_id,
-                    filename=file.filename,
+                    filename=original_filename,
                     **analysis_result,
                 )
 
@@ -381,7 +434,7 @@ async def analyze_meeting_stream(
                     await analyses_collection.insert_one({
                         "user_id": user["_id"],
                         "session_id": session_id,
-                        "filename": file.filename,
+                                    "filename": original_filename,
                         "transcript": transcript_data,
                         "summary": response.summary,
                         "action_items": action_items_data,
@@ -397,7 +450,7 @@ async def analyze_meeting_stream(
                 final_payload = {
                     "status": "complete",
                     "session_id": session_id,
-                    "filename": file.filename,
+                                "filename": original_filename,
                     "transcript": transcript_data,
                     "summary": response.summary,
                     "action_items": action_items_data,
@@ -418,7 +471,7 @@ async def analyze_meeting_stream(
 
                             response = AnalysisResponse(
                                 session_id=session_id,
-                                filename=file.filename,
+                                filename=original_filename,
                                 **analysis_result,
                             )
 
@@ -430,7 +483,7 @@ async def analyze_meeting_stream(
                                 await analyses_collection.insert_one({
                                     "user_id": user["_id"],
                                     "session_id": session_id,
-                                    "filename": file.filename,
+                        "filename": original_filename,
                                     "transcript": transcript_data,
                                     "summary": response.summary,
                                     "action_items": action_items_data,
@@ -446,7 +499,7 @@ async def analyze_meeting_stream(
                             final_payload = {
                                 "status": "complete",
                                 "session_id": session_id,
-                                "filename": file.filename,
+                    "filename": original_filename,
                                 "transcript": transcript_data,
                                 "summary": response.summary,
                                 "action_items": action_items_data,
