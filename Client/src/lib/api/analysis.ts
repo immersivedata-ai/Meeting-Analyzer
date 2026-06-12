@@ -7,6 +7,7 @@ interface BackendAnalysisResponse {
   action_items: AnalysisResults['action_items']
   key_decisions: AnalysisResults['key_decisions']
   processing_time: number
+  duration?: number
   gcs_path?: string
   audio_gcs_path?: string
 }
@@ -18,6 +19,7 @@ function transformResponse(data: BackendAnalysisResponse): AnalysisResults {
     action_items: data.action_items || [],
     key_decisions: data.key_decisions || [],
     processing_time: data.processing_time || 0,
+    duration: data.duration,
     gcs_path: data.gcs_path,
     audio_gcs_path: data.audio_gcs_path,
   }

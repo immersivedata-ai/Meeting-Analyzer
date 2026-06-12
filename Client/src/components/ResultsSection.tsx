@@ -32,6 +32,7 @@ const statItems = [
     return text.split(' ').filter(w => w.length > 0).length.toLocaleString();
   }},
   { icon: FileText, label: 'Est. duration', getValue: (r: AnalysisResults) => {
+    if (r.duration) return `${Math.ceil(r.duration / 60)} min`;
     const text = r.transcript?.map(s => s.text).join(' ') || '';
     const count = text.split(' ').filter(w => w.length > 0).length;
     return `${Math.max(1, Math.ceil(count / 150))} min`;

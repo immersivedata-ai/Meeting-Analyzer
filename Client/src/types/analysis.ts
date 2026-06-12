@@ -30,6 +30,7 @@ export interface AnalysisResults {
   action_items: ActionItem[]
   key_decisions: KeyDecision[]
   processing_time: number
+  duration?: number
   gcs_path?: string
   audio_gcs_path?: string
   filename?: string

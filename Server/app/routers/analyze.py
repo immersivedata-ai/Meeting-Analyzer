@@ -424,6 +424,7 @@ async def analyze_meeting_stream(
                 analysis_result["processing_time"] = processing_time
                 transcript = analysis_result.get("transcript", [])
                 word_count = sum(len(seg.get("text", "").split()) for seg in transcript if isinstance(seg, dict))
+                duration = max((seg.get("end_time", 0) for seg in transcript), default=0) if transcript else 0
 
                 response_obj = AnalysisResponse(session_id=session_id, filename=original_filename, **analysis_result)
                 try:
@@ -434,7 +435,7 @@ async def analyze_meeting_stream(
                         "user_id": user["_id"], "session_id": session_id, "filename": original_filename,
                         "transcript": transcript_data, "summary": response_obj.summary,
                         "action_items": action_items_data, "key_decisions": decisions_data,
-                        "processing_time": processing_time, "duration": 0, "word_count": word_count,
+                        "processing_time": processing_time, "duration": duration, "word_count": word_count,
                         "created_at": datetime.now(timezone.utc),
                         "gcs_path": gcs_path, "audio_gcs_path": audio_gcs_path,
                     })
@@ -445,7 +446,7 @@ async def analyze_meeting_stream(
                     "status": "complete", "session_id": session_id, "filename": original_filename,
                     "transcript": transcript_data, "summary": response_obj.summary,
                     "action_items": action_items_data, "key_decisions": decisions_data,
-                    "processing_time": processing_time,
+                    "processing_time": processing_time, "duration": duration,
                     "gcs_path": gcs_path, "audio_gcs_path": audio_gcs_path,
                 }, default=str) + "\n"
                 return
