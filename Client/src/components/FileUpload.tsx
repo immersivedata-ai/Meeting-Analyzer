@@ -18,8 +18,6 @@ const ACCEPTED_FORMATS = {
   'audio/webm': ['.webm'],
 };
 
-const MAX_FILE_SIZE = 150 * 1024 * 1024;
-
 const stepLabels: Record<string, string> = {
   'Complete!': 'Analysis complete',
 };
@@ -131,7 +129,6 @@ export const FileUpload = ({ onFileAnalyzed, isProcessing, setIsProcessing }: Fi
   const { getRootProps, getInputProps, isDragActive } = useDropzone({
     onDrop,
     accept: ACCEPTED_FORMATS,
-    maxSize: MAX_FILE_SIZE,
     multiple: false,
     disabled: isProcessing,
     onError: (err) => setError(err.message),
@@ -205,7 +202,7 @@ export const FileUpload = ({ onFileAnalyzed, isProcessing, setIsProcessing }: Fi
               {isDragActive ? 'Drop to upload' : 'Drop your recording here'}
             </p>
             <p className="text-sm text-muted-foreground">
-              MP3, WAV, M4A, or MP4 — up to 150 MB
+              MP3, WAV, M4A, MP4 — any size
             </p>
           </div>
 
