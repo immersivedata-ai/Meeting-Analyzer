@@ -13,7 +13,7 @@ from datetime import datetime, timezone
 from typing import Dict, Any, List, Optional
 
 from bson import ObjectId
-from fastapi import APIRouter, File, UploadFile, HTTPException, BackgroundTasks, Depends
+from fastapi import APIRouter, File, Request, UploadFile, HTTPException, BackgroundTasks, Depends
 from fastapi.responses import JSONResponse, StreamingResponse
 from pydantic import BaseModel, Field
 
@@ -309,6 +309,7 @@ async def analyze_meeting(
 @router.post("/analyze/stream")
 async def analyze_meeting_stream(
     background_tasks: BackgroundTasks,
+    request: Request,
     file: UploadFile = File(...),
     settings: Settings = Depends(get_settings_dependency),
     user: dict = Depends(get_current_user),
@@ -464,10 +465,16 @@ async def analyze_meeting_stream(
             if temp_dir:
                 background_tasks.add_task(cleanup_temp_files, temp_dir)
 
+    origin = request.headers.get("origin", "*")
     return StreamingResponse(
         event_stream(),
         media_type="text/plain",
-        headers={"X-Accel-Buffering": "no", "Cache-Control": "no-cache"},
+        headers={
+            "X-Accel-Buffering": "no",
+            "Cache-Control": "no-cache",
+            "Access-Control-Allow-Origin": origin,
+            "Access-Control-Allow-Credentials": "true",
+        },
     )
 
 
