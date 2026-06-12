@@ -9,6 +9,7 @@ import subprocess
 import tempfile
 from typing import Tuple
 
+import google.auth
 from google.cloud import storage
 
 logger = logging.getLogger(__name__)
@@ -19,8 +20,18 @@ GCS_SIGNER_SA = os.getenv("GCS_SIGNER_SA", "immersivedata-sandbox@appspot.gservi
 if GCS_BUCKET:
     _client = storage.Client()
     _bucket = _client.bucket(GCS_BUCKET)
+    _credentials, _ = google.auth.default()
 else:
     _bucket = None
+    _credentials = None
+
+
+def _get_access_token() -> str | None:
+    """Get an access token for IAM signBlob."""
+    if _credentials is None:
+        return None
+    _credentials.refresh(google.auth.transport.requests.Request())
+    return _credentials.token
 
 
 def is_ready() -> bool:
@@ -36,6 +47,7 @@ def generate_upload_url(filename: str, content_type: str) -> Tuple[str, str]:
         method="PUT",
         content_type=content_type,
         service_account_email=GCS_SIGNER_SA,
+        access_token=_get_access_token(),
     )
     return url, f"gs://{GCS_BUCKET}/{filename}"
 
@@ -49,6 +61,7 @@ def generate_download_url(gcs_path: str, minutes: int = 60) -> str:
         expiration=datetime.timedelta(minutes=minutes),
         method="GET",
         service_account_email=GCS_SIGNER_SA,
+        access_token=_get_access_token(),
     )
 
 
