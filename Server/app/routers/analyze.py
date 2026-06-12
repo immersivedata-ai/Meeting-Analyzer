@@ -599,6 +599,20 @@ async def analyze_meeting_stream(
     )
 
 
+# --- Playback URL ---
+
+@router.post("/playback-url")
+async def get_playback_url(
+    gcs_path: str = Form(...),
+    user: dict = Depends(get_current_user),
+):
+    """Generate a signed URL for playing back a stored file from GCS."""
+    if not gcs_handler.is_ready():
+        raise HTTPException(status_code=500, detail="GCS not configured")
+    url = gcs_handler.generate_download_url(gcs_path, minutes=120)
+    return {"url": url}
+
+
 # --- Translation endpoint ---
 
 class TranslateRequest(BaseModel):

@@ -1,16 +1,17 @@
-import { useEffect } from 'react';
+import { useEffect, useState } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { Header } from '@/components/Header';
 import { ResultsSection } from '@/components/ResultsSection';
 import { Button } from '@/components/ui/button';
 import { useToast } from '@/hooks/use-toast';
-import { ArrowLeft, Download, Share2, Upload } from 'lucide-react';
+import { ArrowLeft, Download, Share2, Upload, Play, Volume2 } from 'lucide-react';
 import type { AnalysisResults } from '@/types/analysis';
 
 const ResultsPage = () => {
   const location = useLocation();
   const navigate = useNavigate();
   const { toast } = useToast();
+  const [playbackUrl, setPlaybackUrl] = useState<string | null>(null);
 
   const results: AnalysisResults | null = location.state?.results || null;
 
@@ -19,6 +20,21 @@ const ResultsPage = () => {
       navigate('/');
     }
   }, [results, navigate]);
+
+  useEffect(() => {
+    const filePath = results?.audio_gcs_path || results?.gcs_path;
+    if (!filePath) return;
+    const API_BASE = import.meta.env.VITE_API_URL || '/api';
+    fetch(`${API_BASE}/playback-url`, {
+      method: 'POST',
+      credentials: 'include',
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      body: new URLSearchParams({ gcs_path: filePath }).toString(),
+    })
+      .then(r => r.json())
+      .then(d => setPlaybackUrl(d.url))
+      .catch(() => {});
+  }, [results]);
 
   const handleNewUpload = () => {
     navigate('/');
@@ -192,6 +208,28 @@ const ResultsPage = () => {
             </Button>
           </div>
         </div>
+
+        {playbackUrl && (
+          <div className="surface-raised rounded-xl border border-border/30 p-4 mb-8 animate-fade-in">
+            {results?.gcs_path?.match(/\.(mp4|webm|mov|avi|mkv)$/i) ? (
+              <video controls className="w-full rounded-lg max-h-[400px]" src={playbackUrl}>
+                Your browser does not support video playback.
+              </video>
+            ) : (
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-full bg-primary/10 flex items-center justify-center">
+                  <Volume2 className="w-5 h-5 text-primary" />
+                </div>
+                <div className="flex-1">
+                  <p className="text-sm font-medium mb-1">{results?.filename || 'Recording'}</p>
+                  <audio controls className="w-full h-8" src={playbackUrl}>
+                    Your browser does not support audio playback.
+                  </audio>
+                </div>
+              </div>
+            )}
+          </div>
+        )}
 
         <ResultsSection results={results} />
       </main>
