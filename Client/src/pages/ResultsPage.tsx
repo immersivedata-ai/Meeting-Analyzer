@@ -22,7 +22,8 @@ const ResultsPage = () => {
   }, [results, navigate]);
 
   useEffect(() => {
-    const filePath = results?.audio_gcs_path || results?.gcs_path;
+    const isVideo = results?.gcs_path?.match(/\.(mp4|webm|mov|avi|mkv)$/i);
+    const filePath = isVideo ? results?.gcs_path : results?.audio_gcs_path || results?.gcs_path;
     if (!filePath) return;
     const API_BASE = import.meta.env.VITE_API_URL || '/api';
     fetch(`${API_BASE}/playback-url`, {
